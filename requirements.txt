@@ -1,0 +1,33 @@
+# Prompt-to-ASCII Art Generator Dependencies
+# Optimized for M4 Mac with MPS acceleration
+
+# Core Deep Learning (PyTorch with MPS support)
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Stable Diffusion & ControlNet
+diffusers>=0.25.0
+transformers>=4.36.0
+accelerate>=0.25.0
+safetensors>=0.4.0
+
+# Image Processing
+opencv-python>=4.8.0
+Pillow>=10.0.0
+scikit-image>=0.22.0
+
+# Machine Learning (Random Forest)
+scikit-learn>=1.3.0
+joblib>=1.3.0
+
+# Feature Extraction
+# (HoG features from scikit-image, shape context from opencv)
+
+# Jupyter & Experimentation
+jupyter>=1.0.0
+ipywidgets>=8.0.0
+matplotlib>=3.8.0
+tqdm>=4.66.0
+
+# Utilities
+numpy>=1.24.0
