@@ -2,8 +2,8 @@
 End-to-End Prompt-to-ASCII Pipeline
 
 Unified interface combining:
-- Stable Diffusion image generation
-- AISS and Random Forest structural mappers
+- FLUX.1 Schnell / SDXL-Turbo image generation
+- AISS, Random Forest, and CNN structural mappers
 - Multiple character sets
 - Quality metrics
 
@@ -17,13 +17,14 @@ import time
 from .charsets import CharacterSet, get_charset, list_charsets
 from .aiss import AISSMapper, create_aiss_mapper
 from .random_forest import RandomForestMapper, create_random_forest_mapper
+from .cnn_mapper import CNNMapper, create_cnn_mapper
 from .generator import PromptToImageGenerator, create_generator
 from .preprocessing import resize_for_ascii, preprocess_for_structure
 from .result import ASCIIResult, create_result
 from .metrics import compute_ssim, character_diversity, compare_mappers
 
 
-MapperType = Literal["aiss", "random_forest", "both"]
+MapperType = Literal["aiss", "random_forest", "cnn", "both"]
 
 
 class PromptToASCII:
@@ -68,9 +69,10 @@ class PromptToASCII:
         # Load charset
         self._charset = get_charset(charset, tile_size)
         
-        # Initialize mappers (lazy for AISS, eager for RF if auto_train)
+        # Initialize mappers (lazy loading)
         self._aiss_mapper: Optional[AISSMapper] = None
         self._rf_mapper: Optional[RandomForestMapper] = None
+        self._cnn_mapper: Optional[CNNMapper] = None
         
         if mapper in ("aiss", "both"):
             self._aiss_mapper = create_aiss_mapper(charset, tile_size)
@@ -82,6 +84,9 @@ class PromptToASCII:
                 train=auto_train_rf and not rf_model_path,
                 model_path=rf_model_path,
             )
+        
+        if mapper == "cnn":
+            self._cnn_mapper = create_cnn_mapper(charset, tile_size, train=True)
         
         # Image generator (lazy loaded)
         self._generator: Optional[PromptToImageGenerator] = None
