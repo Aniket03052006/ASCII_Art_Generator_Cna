@@ -1,437 +1,215 @@
 """
-Industrial-Standard Prompt Engineering for ASCII Art
+Industrial-Standard Prompt Engineering v2
+Focused on "Visual Translation" - converting abstract/dynamic concepts into static visual descriptions.
 
-This module implements production-grade prompt engineering based on:
-- Google's Prompt Engineering Best Practices (2024)
-- OpenAI's Prompt Engineering Guide
-- Anthropic's Claude Prompt Engineering Principles
-- Research papers on text-to-image optimization
-
-Key Principles:
-1. Be specific, not vague
-2. Use positive instructions (what TO do, not what NOT to do)
-3. Structure prompts with clear components
-4. Include style references and artistic direction
-5. Handle edge cases with pattern matching
-6. Iterate and A/B test prompts
-
-Image Generation Model: FLUX.1 Schnell (Black Forest Labs)
-- Fast 4-step inference
-- Apache 2.0 license
-- Optimized for speed and quality balance
+Key Features:
+1. Action-to-Visual Translation (e.g., "orbiting" -> "positioned near")
+2. Composition Enforcement (Rule of Thirds, Center)
+3. Explicit separation of subjects
+4. Negative prompt injections
+5. Logic-based template selection
 """
 
 import re
-from typing import Optional, List, Tuple
-from dataclasses import dataclass, field
-from enum import Enum
-
-
-# =============================================================================
-# PROMPT CATEGORIES
-# =============================================================================
-
-class PromptCategory(Enum):
-    """Categories requiring different prompt strategies."""
-    SINGLE_OBJECT = "single"           # One subject: "a house"
-    MULTIPLE_OBJECTS = "multiple"      # 2+ subjects: "a cat and a dog"
-    SCENE = "scene"                    # Landscapes: "mountain landscape"
-    CHARACTER = "character"            # People/animals: "a cat sitting"
-    ABSTRACT = "abstract"              # Concepts: "love", "freedom"
-    TEXT_CONTENT = "text"              # Text in image: "sign saying hello"
-    ACTION = "action"                  # Subject doing something: "bird flying"
-
-
-# =============================================================================
-# PROMPT COMPONENTS (Industrial Standard Structure)
-# =============================================================================
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 @dataclass
-class PromptComponents:
-    """Structured prompt following industrial standards."""
-    
-    # Core subject (required)
-    subject: str
-    
-    # Style descriptors
-    art_style: str = "simple minimalist line art"
-    color_scheme: str = "black and white only, high contrast"
-    
-    # Composition
-    composition: str = "centered, balanced composition"
-    background: str = "plain white background"
-    
-    # Technical specifications
-    rendering: str = "clean bold outlines, no shading, no gradients"
-    detail_level: str = "simple geometric shapes, iconic style"
-    
-    # Spatial arrangement (for multiple objects)
-    spatial: str = ""
-    
-    # Negative concepts to avoid (phrased positively)
-    cleanup: str = "single clean outline per object"
-    
-    def build(self) -> str:
-        """Build the complete prompt string."""
-        parts = [
-            self.subject,
-            self.art_style,
-            self.color_scheme,
-            self.rendering,
-            self.detail_level,
-            self.composition,
-            self.background,
-        ]
-        
-        if self.spatial:
-            parts.append(self.spatial)
-        
-        parts.append(self.cleanup)
-        
-        return ", ".join(filter(None, parts))
-
+class PromptStrategy:
+    style: str
+    composition: str
+    rendering: str
+    negative: str
 
 # =============================================================================
-# PROMPT TEMPLATES (A/B Tested Variations)
+# visual_translation_layer
+# Converts dynamic verbs into static positional descriptions
 # =============================================================================
-
-# Template V1: Minimal (fast, good for simple objects)
-TEMPLATE_MINIMAL = PromptComponents(
-    subject="{subject}",
-    art_style="simple line art icon",
-    color_scheme="black and white",
-    composition="centered",
-    background="white background",
-    rendering="bold outlines",
-    detail_level="simple shapes",
-    cleanup="clean silhouette",
-)
-
-# Template V2: Detailed (better structure preservation)
-TEMPLATE_DETAILED = PromptComponents(
-    subject="{subject}",
-    art_style="minimalist vector illustration, flat design",
-    color_scheme="pure black on white, maximum contrast",
-    composition="centered balanced composition, clear focal point",
-    background="solid white background, no patterns",
-    rendering="thick bold outlines only, no fill patterns, no shading, no gradients",
-    detail_level="simplified geometric shapes, icon style, easily recognizable",
-    cleanup="distinct silhouette, single outline per element",
-)
-
-# Template V3: Multi-object (optimized for separation)
-TEMPLATE_MULTI_OBJECT = PromptComponents(
-    subject="{subject}",
-    art_style="minimalist icon set style, each item as distinct symbol",
-    color_scheme="black and white only, high contrast",
-    composition="items arranged in a clear row with equal spacing",
-    background="white background",
-    rendering="thick outlines, uniform stroke width",
-    detail_level="simple geometric icons, instantly recognizable",
-    spatial="generous white space between each element, no overlapping, no touching",
-    cleanup="each object isolated and complete",
-)
-
-# Template V4: Scene/Landscape (optimized for structure)
-TEMPLATE_SCENE = PromptComponents(
-    subject="{subject}",
-    art_style="simple landscape silhouette, paper cut-out style",
-    color_scheme="black silhouettes on white",
-    composition="clear foreground/background separation",
-    background="plain white sky",
-    rendering="bold solid shapes, no fine details",
-    detail_level="major shapes only, no small elements",
-    cleanup="distinct layered silhouettes",
-)
-
-# Template V5: Character/Action (optimized for figures)
-TEMPLATE_CHARACTER = PromptComponents(
-    subject="{subject}",
-    art_style="simple cartoon character, mascot style",
-    color_scheme="black and white",
-    composition="full body view, centered",
-    background="white background",
-    rendering="thick outlines, cartoon proportions",
-    detail_level="simple features, exaggerated key characteristics",
-    cleanup="clear body outline, recognizable pose",
-)
-
-
-# =============================================================================
-# PATTERN DETECTION
-# =============================================================================
-
-PATTERNS = {
-    PromptCategory.MULTIPLE_OBJECTS: [
-        r'\band\b',
-        r'\bwith\b',
-        r'\bnear\b',
-        r'\bbeside\b',
-        r'\bnext to\b',
-        r'\b(\d+)\s+\w+s?\b',  # "3 trees"
-        r'\bsome\b',
-        r'\bmany\b',
-        r'\bseveral\b',
-    ],
-    PromptCategory.SCENE: [
-        r'\blandscape\b',
-        r'\bscene\b',
-        r'\bskyline\b',
-        r'\bmountain',
-        r'\bocean\b',
-        r'\bforest\b',
-        r'\bgarden\b',
-        r'\bbeach\b',
-        r'\bcity\b',
-    ],
-    PromptCategory.CHARACTER: [
-        r'\bsitting\b',
-        r'\bstanding\b',
-        r'\brunning\b',
-        r'\bwalking\b',
-        r'\bflying\b',
-        r'\bplaying\b',
-        r'\beating\b',
-        r'\bsleeping\b',
-    ],
-    PromptCategory.ABSTRACT: [
-        r'\blove\b',
-        r'\bhappiness\b',
-        r'\bfreedom\b',
-        r'\bpeace\b',
-        r'\btime\b',
-        r'\bmusic\b',
-    ],
-    PromptCategory.TEXT_CONTENT: [
-        r'\btext\b',
-        r'\bsaying\b',
-        r'\bword\b',
-        r'\bletter\b',
-        r'\blogo\b',
-        r'\bsign\b',
-        r'"[^"]+"',
-    ],
+ACTION_TO_VISUAL: Dict[str, str] = {
+    # Motion / Orbiting
+    r"\borbit(ing|s)?\b": "placed near to",
+    r"\bcircle(s|d)?\b": "circular shape",
+    r"\brotat(ing|e|es)\b": "angled view of",
+    r"\bfly(ing|ies)?\b": "floating high in the empty white sky",
+    r"\brun(ning|s)?\b": "in a dynamic pose with legs apart",
+    r"\bjump(ing|s)?\b": "suspended in mid-air above the ground",
+    r"\bswimm(ing|s)?\b": "submerged in water ripples",
+    
+    # Interactions
+    r"\bsitt(ing|s)\b": "resting on top of",
+    r"\bstand(ing|s)\b": "standing vertically on",
+    r"\bhold(ing|s)\b": "with attached",
+    r"\btouch(ing|es)\b": "in contact with",
 }
 
-# Complexity words to replace
-COMPLEXITY_REPLACEMENTS = {
-    'detailed': 'simple',
-    'intricate': 'simple',
-    'complex': 'simple',
-    'realistic': 'iconic',
-    'photorealistic': 'iconic',
-    'textured': 'flat',
-    '3d': 'flat 2d',
-    'elaborate': 'simple',
+# Specific object pairs that need distinct reshaping (e.g. moon/earth)
+# This acts like a "Knowledge Graph" for common pairings
+CONCEPT_REFINEMENT: Dict[str, str] = {
+    # Space
+    r".*moon.*earth.*": "a large circle Earth on the left, a small circle Moon on the right, generous negative space between them",
+    r".*sun.*planet.*": "a giant circle Sun, a tiny circle planet nearby",
+    
+    # Nature
+    r".*cat.*chair.*": "a cute cat sitting on top of a simple chair. cat clearly visible with ears head body tail. chair clearly visible with seat back legs.",
+    r".*cat.*table.*": "a cat sitting on top of a rectangular table. cat has round head with two triangle ears above. table has flat horizontal top and four vertical legs.",
+    r".*bird.*tree.*": "a bird perching on a tree branch. bird distinct from tree.",
+    
+    # People / Couples
+    r".*couple.*": "two stick figure people standing side by side. LEFT PERSON: circle head, vertical body line, two arm lines, two leg lines. RIGHT PERSON: same but slightly different pose. Their closest hands are connected by a horizontal line. Clear white space between the two figures except the hand connection.",
+    r".*people.*holding.*hands.*": "two simple stick figures side by side with hands touching in the middle. Each figure has: circle head, body, arms, legs. Generous spacing between figures.",
+    r".*two.*person.*": "two simple human silhouettes standing apart. Each has distinct head, body, arms, legs.",
+    
+    # Animals facing off
+    r".*cat.*vs.*dog.*|.*dog.*vs.*cat.*": "LEFT SIDE: a cat silhouette with pointed triangle ears, arched back, tail up. RIGHT SIDE: a dog silhouette with floppy ears, tail wagging. Both animals facing each other with clear white space between them. VS text or lightning bolt in the middle optional.",
+    r".*cat.*and.*dog.*|.*dog.*and.*cat.*": "a cat on the left (triangle ears, tail) and a dog on the right (floppy ears, snout). Both sitting, clearly separated by white space.",
+    
+    # Geometric shapes (need thick bold outlines)
+    r".*circle.*": "a large bold circle outline, thick black circular ring, perfectly round, centered, the circle outline is very thick and prominent",
+    r".*triangle.*": "an equilateral triangle pointing UP with a sharp single point at the top apex, two diagonal lines going down from apex, one horizontal line at bottom connecting the two bottom corners, classic pyramid shape, thick black outline",
+    r".*square.*|.*rectangle.*": "a large bold square outline, thick black rectangular shape, four right angles, centered, the outline is very thick",
+    r".*star.*": "a large bold five-pointed star, thick black outline, classic star shape with five points radiating outward, centered",
+    r".*heart.*": "a large bold heart shape, thick black heart outline, classic love heart symbol, centered",
+    
+    # Abstract concepts (map to concrete visuals - use flexible matching)
+    r".*\bhappiness\b.*|.*\bhappy\b.*": "a bright smiling sun face with thick radiating rays, simple circular face with big curved smile, two dot eyes, extremely simple icon",
+    r".*\blove\b.*": "a large bold heart shape, thick black heart outline, classic love heart symbol, centered, simple icon",
+    r".*\bpeace\b.*": "a simple peace dove bird silhouette flying with olive branch, white dove black outline",
+    r".*\bfreedom\b.*": "a large eagle or bird with wings spread WIDE horizontally, soaring bird silhouette, thick bold black outline, simple majestic flying bird icon",
+    
+    # Vague/minimal prompts (provide reasonable defaults)
+    r"^thing$|^stuff$|^thing on stuff$": "a simple cube shape sitting on a flat surface, geometric objects, thick outlines",
+    r"^something$|^anything$": "a random simple shape like a star or circle, bold outline, centered",
 }
 
-# Abstract concept mappings
-ABSTRACT_MAPPINGS = {
-    'love': 'a simple heart shape symbol',
-    'happiness': 'a smiling sun face',
-    'sadness': 'a teardrop shape',
-    'freedom': 'a bird with spread wings flying',
-    'peace': 'a peace dove with olive branch',
-    'time': 'a simple analog clock face',
-    'music': 'musical notes floating',
-}
-
-
 # =============================================================================
-# RESULT DATACLASS
+# style_templates
 # =============================================================================
 
-@dataclass
-class EnhancedPrompt:
-    """Result of prompt enhancement."""
-    original: str
-    enhanced: str
-    category: PromptCategory
-    template_used: str
-    warnings: List[str] = field(default_factory=list)
-    
-    def __str__(self) -> str:
-        return self.enhanced
-
-
-# =============================================================================
-# MAIN ENHANCEMENT FUNCTION
-# =============================================================================
-
-def detect_category(prompt: str) -> PromptCategory:
-    """Detect the most appropriate category for a prompt."""
-    prompt_lower = prompt.lower()
-    
-    # Priority order matters
-    for pattern in PATTERNS.get(PromptCategory.TEXT_CONTENT, []):
-        if re.search(pattern, prompt_lower):
-            return PromptCategory.TEXT_CONTENT
-    
-    for pattern in PATTERNS.get(PromptCategory.ABSTRACT, []):
-        if re.search(pattern, prompt_lower):
-            return PromptCategory.ABSTRACT
-    
-    for pattern in PATTERNS.get(PromptCategory.SCENE, []):
-        if re.search(pattern, prompt_lower):
-            return PromptCategory.SCENE
-    
-    for pattern in PATTERNS.get(PromptCategory.CHARACTER, []):
-        if re.search(pattern, prompt_lower):
-            return PromptCategory.CHARACTER
-    
-    for pattern in PATTERNS.get(PromptCategory.MULTIPLE_OBJECTS, []):
-        if re.search(pattern, prompt_lower):
-            return PromptCategory.MULTIPLE_OBJECTS
-    
-    return PromptCategory.SINGLE_OBJECT
-
-
-def simplify_prompt(prompt: str) -> str:
-    """Replace complexity-inducing words."""
-    result = prompt.lower()
-    for complex_word, simple_word in COMPLEXITY_REPLACEMENTS.items():
-        result = re.sub(r'\b' + complex_word + r'\b', simple_word, result, flags=re.IGNORECASE)
-    return result
-
-
-def handle_abstract(prompt: str) -> Tuple[str, Optional[str]]:
-    """Convert abstract concepts to concrete visuals."""
-    prompt_lower = prompt.lower()
-    
-    for abstract, concrete in ABSTRACT_MAPPINGS.items():
-        if abstract in prompt_lower:
-            # Replace abstract with concrete
-            result = re.sub(r'\b' + abstract + r'\b', concrete, prompt, flags=re.IGNORECASE)
-            warning = f"Abstract '{abstract}' → '{concrete}'"
-            return result, warning
-    
-    return prompt, None
-
-
-def enhance_prompt(
-    prompt: str,
-    force_template: Optional[str] = None,
-) -> EnhancedPrompt:
-    """
-    Enhance a prompt for optimal ASCII art generation.
-    
-    Industrial-standard prompt engineering:
-    1. Detect category
-    2. Simplify complexity
-    3. Handle edge cases (abstract, text)
-    4. Select optimal template
-    5. Build structured prompt
-    
-    Args:
-        prompt: User's original prompt
-        force_template: Optional template override ('minimal', 'detailed', 'multi', 'scene', 'character')
-        
-    Returns:
-        EnhancedPrompt with optimized text
-    """
-    warnings = []
-    working_prompt = prompt.strip()
-    
-    # Step 1: Simplify complexity words
-    working_prompt = simplify_prompt(working_prompt)
-    
-    # Step 2: Detect category
-    category = detect_category(working_prompt)
-    
-    # Step 3: Handle special cases
-    if category == PromptCategory.ABSTRACT:
-        working_prompt, warning = handle_abstract(working_prompt)
-        if warning:
-            warnings.append(warning)
-    
-    if category == PromptCategory.TEXT_CONTENT:
-        warnings.append("⚠️ Text in images doesn't convert well to ASCII art")
-    
-    # Step 4: Select template
-    if force_template:
-        template_name = force_template
-        template = {
-            'minimal': TEMPLATE_MINIMAL,
-            'detailed': TEMPLATE_DETAILED,
-            'multi': TEMPLATE_MULTI_OBJECT,
-            'scene': TEMPLATE_SCENE,
-            'character': TEMPLATE_CHARACTER,
-        }.get(force_template, TEMPLATE_DETAILED)
-    else:
-        if category == PromptCategory.MULTIPLE_OBJECTS:
-            template = TEMPLATE_MULTI_OBJECT
-            template_name = "multi_object"
-        elif category == PromptCategory.SCENE:
-            template = TEMPLATE_SCENE
-            template_name = "scene"
-        elif category == PromptCategory.CHARACTER:
-            template = TEMPLATE_CHARACTER
-            template_name = "character"
-        else:
-            template = TEMPLATE_DETAILED
-            template_name = "detailed"
-    
-    # Step 5: Build prompt
-    template.subject = working_prompt
-    enhanced = template.build()
-    
-    return EnhancedPrompt(
-        original=prompt,
-        enhanced=enhanced,
-        category=category,
-        template_used=template_name,
-        warnings=warnings,
+STYLES = {
+    "default": PromptStrategy(
+        style="minimalist line art icon, black and white only",
+        composition="centered on plain white background",
+        rendering="thick bold clean outlines, no shading, no gradients, flat 2D vector style",
+        negative="complex, realistic, photo, shading, texture, gray, colors, messy, sketch lines, blurred, 3d render"
+    ),
+    "diagram": PromptStrategy(
+        style="technical diagram style, schematic view",
+        composition="distinct elements with clear separation",
+        rendering="high contrast, precise geometric shapes, uniform line weight",
+        negative="artistic, painterly, textured, messy, overlap"
     )
-
-
-def enhance_for_ascii(prompt: str) -> str:
-    """Simple wrapper returning just the enhanced string."""
-    return enhance_prompt(prompt).enhanced
-
+}
 
 # =============================================================================
-# A/B TESTING FRAMEWORK
+# feature_enhancement_layer
+# Ensures prominent features of objects are explicitly requested
 # =============================================================================
+FEATURE_ENHANCEMENT: Dict[str, str] = {
+    r"\bcat\b": "cat with distinct pointed ears, whiskers, and tail",
+    r"\bdog\b": "dog with distinct ears, snout, and tail",
+    r"\bbird\b": "bird with distinct beak, wings, and feathery silhouette",
+    r"\bface\b": "face with clearly defined eyes, nose, and mouth",
+    r"\bhouse\b": "house with distinct triangular roof, door, and square windows",
+    r"\btree\b": "tree with distinct trunk and leafy branches",
+    r"\bcar\b": "car with distinct wheels and windows",
+    r"\bperson\b": "person with distinct head, arms, and legs",
+    r"\brabbit\b": "rabbit with long ears and fluffy tail",
+    r"\bfish\b": "fish with distinct fins and tail",
+    r"\bflower\b": "flower with distinct petals and stem",
+}
 
-def generate_test_variations(prompt: str) -> List[Tuple[str, str]]:
-    """
-    Generate multiple prompt variations for A/B testing.
-    
-    Returns list of (template_name, enhanced_prompt) tuples.
-    """
-    variations = []
-    
-    for template_name in ['minimal', 'detailed', 'multi', 'scene', 'character']:
-        result = enhance_prompt(prompt, force_template=template_name)
-        variations.append((template_name, result.enhanced))
-    
-    return variations
+class PromptEnhancer:
+    def __init__(self):
+        self.action_map = ACTION_TO_VISUAL
+        self.concept_map = CONCEPT_REFINEMENT
+        self.feature_map = FEATURE_ENHANCEMENT
+        
+    def translate_actions(self, prompt: str) -> str:
+        """Translates dynamic actions to static visual descriptions."""
+        working_prompt = prompt.lower()
+        for pattern, replacement in self.action_map.items():
+            if re.search(pattern, working_prompt):
+                working_prompt = re.sub(pattern, replacement, working_prompt)
+        return working_prompt
 
+    def check_concept_override(self, prompt: str) -> Optional[str]:
+        """Checks if the concept matches a known complex scenario override."""
+        prompt_lower = prompt.lower()
+        for pattern, override in self.concept_map.items():
+            if re.match(pattern, prompt_lower):
+                return override
+        return None
 
-# =============================================================================
-# CLI TESTING
-# =============================================================================
+    def get_feature_enhancements(self, prompt: str) -> List[str]:
+        """Collects specific feature instructions for detected objects."""
+        prompt_lower = prompt.lower()
+        features = []
+        for pattern, enhancement in self.feature_map.items():
+            if re.search(pattern, prompt_lower):
+                features.append(enhancement)
+        return features
+
+    def enhance(self, prompt: str) -> str:
+        """Main entry point for enhancement."""
+        
+        # 1. Check for full concept override (highest accuracy for specific known hard cases)
+        override = self.check_concept_override(prompt)
+        if override:
+            core_prompt = override
+            strategy = STYLES["diagram"] if "moon" in prompt.lower() or "earth" in prompt.lower() else STYLES["default"]
+            # Append features even to overrides if applicable? 
+            # Overrides usually are complete, but additional details won't hurt.
+            additional_features = self.get_feature_enhancements(prompt)
+            if additional_features:
+                core_prompt += ", " + ", ".join(additional_features)
+        else:
+            # 2. General Translation
+            core_prompt = self.translate_actions(prompt)
+            strategy = STYLES["default"]
+            
+            # Add specific feature enhancements
+            additional_features = self.get_feature_enhancements(prompt)
+            if additional_features:
+                core_prompt += ", " + ", ".join(additional_features)
+
+        # 3. Construct Final Prompt
+        # Formula: [Style] + [Composition] + [Subject/Core] + [Visual Enforcers] + [Negative Enforcers(in positive form)]
+        
+        visual_enforcers = (
+            "distinct silhouettes, widely spaced elements, "
+            "white space, clean edges, use simple geometric primitives, "
+            "prominent features clearly visible"
+        )
+        
+        final_prompt = (
+            f"{strategy.style}, {strategy.composition}, "
+            f"SUBJECT: {core_prompt}, "
+            f"{strategy.rendering}, "
+            f"{visual_enforcers}"
+        )
+        
+        return final_prompt
+
+# Singleton instance
+enhancer = PromptEnhancer()
+
+def enhance_prompt(prompt: str) -> str:
+    """Public API for the enhancer."""
+    return enhancer.enhance(prompt)
 
 if __name__ == "__main__":
-    print("=" * 70)
-    print("INDUSTRIAL-STANDARD PROMPT ENGINEERING TEST SUITE")
-    print("=" * 70)
-    
-    test_prompts = [
+    # Test suite
+    tests = [
+        "moon orbiting earth",
         "a cat sitting on a chair",
-        "a house and a tree",
-        "mountain landscape with birds",
-        "love and peace",
-        "3 stars and a moon",
-        "a person running",
+        "a bird flying",
+        "a simple house",
+        "a happy face"
     ]
     
-    for prompt in test_prompts:
-        result = enhance_prompt(prompt)
-        print(f"\n📝 Original: '{prompt}'")
-        print(f"   Category: {result.category.value}")
-        print(f"   Template: {result.template_used}")
-        if result.warnings:
-            for w in result.warnings:
-                print(f"   ⚠️  {w}")
-        print(f"   Enhanced: {result.enhanced[:100]}...")
+    print("PROMPT ENGINEER V2 TEST")
+    print("="*60)
+    for t in tests:
+        print(f"IN:  {t}")
+        print(f"OUT: {enhance_prompt(t)}")
+        print("-" * 20)

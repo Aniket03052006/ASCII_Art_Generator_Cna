@@ -204,10 +204,21 @@ def create_interface():
                     with gr.Column(scale=1):
                         prompt_input = gr.Textbox(
                             label="Your Prompt",
-                            placeholder="A majestic mountain with snow peaks and pine trees...",
+                            placeholder="Describe what you want to generate...",
                             lines=3,
                             max_lines=5,
                         )
+                        
+                        # Sample prompts (like ChatGPT)
+                        gr.Markdown("**Try these examples:**")
+                        with gr.Row():
+                            ex1 = gr.Button("🏠 House", size="sm", variant="secondary")
+                            ex2 = gr.Button("🐱 Cat on chair", size="sm", variant="secondary")
+                            ex3 = gr.Button("⭐ Stars & moon", size="sm", variant="secondary")
+                        with gr.Row():
+                            ex4 = gr.Button("🏔️ Mountain", size="sm", variant="secondary")
+                            ex5 = gr.Button("🌳 Tree", size="sm", variant="secondary")
+                            ex6 = gr.Button("❤️ Heart", size="sm", variant="secondary")
                         
                         with gr.Row():
                             width_slider = gr.Slider(
@@ -218,7 +229,7 @@ def create_interface():
                                 value=42, label="Seed", precision=0
                             )
                         
-                        generate_btn = gr.Button("🚀 Generate", variant="primary", size="lg")
+                        generate_btn = gr.Button("🚀 Generate ASCII Art", variant="primary", size="lg")
                         
                         status_text = gr.Textbox(label="Status", interactive=False)
                     
@@ -231,6 +242,14 @@ def create_interface():
                     max_lines=50,
                     elem_classes=["ascii-output"],
                 )
+                
+                # Sample prompt click handlers
+                ex1.click(lambda: "a simple house with roof, door, and windows", outputs=prompt_input)
+                ex2.click(lambda: "a cute cat sitting on a chair, cat has ears head body tail, chair has seat back legs", outputs=prompt_input)
+                ex3.click(lambda: "three stars and a crescent moon", outputs=prompt_input)
+                ex4.click(lambda: "a mountain with snow peak and pine trees", outputs=prompt_input)
+                ex5.click(lambda: "a simple tree with trunk and leafy branches", outputs=prompt_input)
+                ex6.click(lambda: "a simple heart shape", outputs=prompt_input)
                 
                 generate_btn.click(
                     fn=generate_from_prompt,

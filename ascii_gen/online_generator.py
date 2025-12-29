@@ -87,17 +87,10 @@ class OnlineGenerator:
         if not self.api_key:
             raise ValueError("API key required. Set HF_TOKEN environment variable.")
         
-        # Use the dedicated prompt engineering module
+        # Use Prompt Engineering v2
         from .prompt_engineering import enhance_prompt
         
-        result = enhance_prompt(prompt)
-        enhanced_prompt = result.enhanced
-        
-        # Log enhancement info
-        print(f"📝 Category: {result.category.value}")
-        if result.warnings:
-            for warning in result.warnings:
-                print(f"⚠️  {warning}")
+        enhanced_prompt = enhance_prompt(prompt)
         print(f"📝 Enhanced: {enhanced_prompt[:80]}...")
         
         payload = {
