@@ -166,9 +166,11 @@ class CNNMapper:
         X = np.array(X)
         y = np.array(y)
         
-        # Augment
-        X_aug = self._augment_batch(X, n_augments=10)
-        y_aug = np.tile(y, 11)  # 1 original + 10 augments (5 noise + 5 brightness)
+        # Augment: _augment_batch creates 1 + n_augments*2 copies
+        n_augments = 5
+        X_aug = self._augment_batch(X, n_augments=n_augments)
+        num_copies = 1 + n_augments * 2  # 1 original + 5 noise + 5 brightness = 11
+        y_aug = np.tile(y, num_copies)
         
         # Add channel dimension: (N, H, W) -> (N, 1, H, W)
         X_aug = X_aug[:, np.newaxis, :, :]

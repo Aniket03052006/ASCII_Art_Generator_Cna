@@ -36,10 +36,28 @@ wheels/
 *.swp
 .DS_Store
 
-# Project specific
-models/
-output/
+# ===================
+# Project Specific
+# ===================
+
+# Trained models (large files, users should train their own)
+models/*.pth
+models/*.joblib
+models/*.pkl
+
+# User outputs (personal files, not for repo)
+outputs/*
+!outputs/.gitkeep
+!outputs/example_*.txt
+!outputs/example_*.png
+
+# Old test outputs in root
+output_*.txt
+test_output.txt
+
+# Compiled extensions
 *.so
-# Keep test inputs/outputs for demo purposes, but maybe exclude large ones if they existed
-# test_input.png
-# test_output.txt
+
+# Secrets
+*.env
+.env.*

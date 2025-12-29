@@ -100,7 +100,7 @@ class PromptToASCII:
     def _convert_with_mapper(
         self,
         image: Image.Image,
-        mapper: Union[AISSMapper, RandomForestMapper],
+        mapper: Union[AISSMapper, RandomForestMapper, CNNMapper],
         apply_edge_detection: bool = True,
     ) -> str:
         """Convert image to ASCII using specified mapper."""
@@ -262,7 +262,14 @@ class PromptToASCII:
             )
         
         else:
-            mapper = self._aiss_mapper if self.mapper_type == "aiss" else self._rf_mapper
+            # Select appropriate mapper
+            if self.mapper_type == "aiss":
+                mapper = self._aiss_mapper
+            elif self.mapper_type == "cnn":
+                mapper = self._cnn_mapper
+            else:
+                mapper = self._rf_mapper
+            
             ascii_text = self._convert_with_mapper(image, mapper, apply_edge_detection)
             
             return create_result(

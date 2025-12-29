@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ascii-art-generator"
+version = "0.3.0"
+description = "Transform text prompts and images into ASCII art using AI"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Aniket Mandal", email = "aniket@example.com"}
+]
+keywords = [
+    "ascii-art",
+    "ai",
+    "image-generation",
+    "flux",
+    "stable-diffusion",
+    "deep-learning",
+    "computer-vision"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Artistic Software",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "Pillow>=10.0.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "scikit-image>=0.21.0",
+    "opencv-python>=4.8.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "black",
+    "ruff",
+    "mypy",
+]
+web = [
+    "gradio>=4.0.0",
+]
+local = [
+    "diffusers>=0.25.0",
+    "transformers>=4.36.0",
+    "accelerate>=0.25.0",
+]
+all = [
+    "ascii-art-generator[dev,web,local]",
+]
+
+[project.scripts]
+ascii-gen = "ascii_gen.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Aniket03052006/ASCII_Art_Generator_Cna"
+Documentation = "https://github.com/Aniket03052006/ASCII_Art_Generator_Cna#readme"
+Repository = "https://github.com/Aniket03052006/ASCII_Art_Generator_Cna"
+Issues = "https://github.com/Aniket03052006/ASCII_Art_Generator_Cna/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ascii_gen*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I", "N", "D", "UP"]
+ignore = ["D100", "D104"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v --tb=short"
