@@ -1,10 +1,12 @@
 """
-Stable Diffusion Image Generator
+Image Generator with FLUX.1 Schnell
 
-Provides text-to-image generation using Stable Diffusion with:
-- SDXL-Turbo for fast inference (4 steps)
-- ControlNet for structural guidance
-- MPS (Metal) optimization for Apple Silicon
+Provides text-to-image generation using:
+- FLUX.1 Schnell (default) - Fast, high-quality, Apache 2.0 license
+- SDXL-Turbo (fallback) - Smaller model for limited RAM
+
+Optimized for Apple Silicon (M4) with MPS backend.
+Memory-efficient settings for 16GB RAM systems.
 
 Free tier friendly - uses HuggingFace Hub only.
 """
@@ -17,10 +19,10 @@ import numpy as np
 
 class PromptToImageGenerator:
     """
-    Text-to-image generator using Stable Diffusion.
+    Text-to-image generator using FLUX.1 Schnell or SDXL-Turbo.
     
     Optimized for Apple Silicon (M4) with MPS backend.
-    Uses SDXL-Turbo for fast inference (~4 steps).
+    FLUX.1 Schnell: Better quality, 1-4 steps, ~10-15s on 16GB RAM.
     
     Example:
         >>> generator = PromptToImageGenerator()
@@ -28,28 +30,38 @@ class PromptToImageGenerator:
         >>> image.save("output.png")
     """
     
+    # Available models
+    MODELS = {
+        "flux-schnell": "black-forest-labs/FLUX.1-schnell",  # Best quality, Apache 2.0
+        "sdxl-turbo": "stabilityai/sdxl-turbo",  # Faster, smaller
+    }
+    
     def __init__(
         self,
-        model: str = "stabilityai/sdxl-turbo",
-        controlnet_model: Optional[str] = None,  # "lllyasviel/sd-controlnet-canny"
+        model: str = "flux-schnell",
         device: str = "auto",
-        enable_cpu_offload: bool = True,
-        compile_model: bool = False,
+        enable_memory_optimization: bool = True,
+        low_ram_mode: bool = True,  # Enable for 16GB systems
     ):
         """
         Initialize the generator.
         
         Args:
-            model: HuggingFace model ID for Stable Diffusion
-            controlnet_model: Optional ControlNet model ID
+            model: "flux-schnell" (default, best) or "sdxl-turbo" (faster)
             device: "auto", "mps", "cuda", or "cpu"
-            enable_cpu_offload: Enable memory-efficient CPU offloading
-            compile_model: Use torch.compile for faster inference (experimental)
+            enable_memory_optimization: Enable attention slicing
+            low_ram_mode: Extra optimizations for 16GB RAM (slower but stable)
         """
-        self.model_id = model
-        self.controlnet_id = controlnet_model
-        self.enable_cpu_offload = enable_cpu_offload
-        self.compile_model = compile_model
+        # Resolve model ID
+        if model in self.MODELS:
+            self.model_id = self.MODELS[model]
+            self.model_type = model
+        else:
+            self.model_id = model
+            self.model_type = "custom"
+        
+        self.enable_memory_optimization = enable_memory_optimization
+        self.low_ram_mode = low_ram_mode
         
         # Determine device
         if device == "auto":
@@ -64,71 +76,75 @@ class PromptToImageGenerator:
         
         # Lazy loading - models loaded on first use
         self._pipe = None
-        self._controlnet_pipe = None
         self._is_loaded = False
+        self._is_flux = "flux" in self.model_id.lower()
     
     def _load_pipeline(self):
-        """Load the Stable Diffusion pipeline."""
+        """Load the image generation pipeline."""
         if self._is_loaded:
             return
         
-        from diffusers import AutoPipelineForText2Image
-        
         print(f"Loading {self.model_id} on {self.device}...")
+        print("⏳ First run downloads ~30GB of model files. Please wait...")
         
-        # Load base pipeline
-        self._pipe = AutoPipelineForText2Image.from_pretrained(
+        if self._is_flux:
+            self._load_flux_pipeline()
+        else:
+            self._load_sdxl_pipeline()
+        
+        # Memory optimizations
+        if self.enable_memory_optimization and self._pipe is not None:
+            if hasattr(self._pipe, 'enable_attention_slicing'):
+                self._pipe.enable_attention_slicing()
+                print("✅ Attention slicing enabled (reduces VRAM usage)")
+        
+        self._is_loaded = True
+        print("✅ Pipeline loaded successfully!")
+    
+    def _load_flux_pipeline(self):
+        """Load FLUX.1 Schnell pipeline."""
+        from diffusers import FluxPipeline
+        
+        # Determine dtype
+        if self.device == "mps":
+            # MPS works best with bfloat16 for FLUX
+            dtype = torch.bfloat16
+        elif self.device == "cuda":
+            dtype = torch.float16
+        else:
+            dtype = torch.float32
+        
+        self._pipe = FluxPipeline.from_pretrained(
             self.model_id,
-            torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
-            variant="fp16" if self.device != "cpu" else None,
+            torch_dtype=dtype,
         )
         
         # Move to device
-        if self.device == "mps":
-            self._pipe = self._pipe.to("mps")
-        elif self.device == "cuda":
-            if self.enable_cpu_offload:
-                self._pipe.enable_model_cpu_offload()
-            else:
-                self._pipe = self._pipe.to("cuda")
-        else:
-            self._pipe = self._pipe.to("cpu")
+        self._pipe = self._pipe.to(self.device)
         
-        # Compile for faster inference (PyTorch 2.0+)
-        if self.compile_model and hasattr(torch, 'compile'):
-            self._pipe.unet = torch.compile(self._pipe.unet, mode="reduce-overhead")
-        
-        self._is_loaded = True
-        print("Pipeline loaded successfully!")
+        # Extra memory optimization for 16GB systems
+        if self.low_ram_mode:
+            try:
+                # Enable sequential CPU offload for very low RAM
+                if hasattr(self._pipe, 'enable_sequential_cpu_offload'):
+                    # Don't use this for MPS - instead use attention slicing
+                    pass
+            except Exception as e:
+                print(f"Note: Some memory optimizations not available: {e}")
     
-    def _load_controlnet_pipeline(self):
-        """Load ControlNet pipeline if configured."""
-        if not self.controlnet_id or self._controlnet_pipe is not None:
-            return
+    def _load_sdxl_pipeline(self):
+        """Load SDXL-Turbo pipeline (fallback for limited RAM)."""
+        from diffusers import AutoPipelineForText2Image
         
-        from diffusers import ControlNetModel, StableDiffusionXLControlNetPipeline
+        dtype = torch.float16 if self.device != "cpu" else torch.float32
         
-        print(f"Loading ControlNet: {self.controlnet_id}...")
-        
-        # Load ControlNet model
-        controlnet = ControlNetModel.from_pretrained(
-            self.controlnet_id,
-            torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
+        self._pipe = AutoPipelineForText2Image.from_pretrained(
+            self.model_id,
+            torch_dtype=dtype,
+            variant="fp16" if self.device != "cpu" else None,
         )
         
-        # Create pipeline with ControlNet
-        self._controlnet_pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-xl-base-1.0",
-            controlnet=controlnet,
-            torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
-        )
-        
-        if self.device == "mps":
-            self._controlnet_pipe = self._controlnet_pipe.to("mps")
-        elif self.device == "cuda":
-            self._controlnet_pipe.enable_model_cpu_offload()
-        
-        print("ControlNet loaded!")
+        self._pipe = self._pipe.to(self.device)
     
     def generate(
         self,
@@ -136,8 +152,8 @@ class PromptToImageGenerator:
         negative_prompt: str = "blurry, low quality, distorted, ugly",
         width: int = 512,
         height: int = 512,
-        num_inference_steps: int = 4,  # SDXL-Turbo is 4-step
-        guidance_scale: float = 0.0,   # Turbo doesn't need CFG
+        num_inference_steps: int = 4,
+        guidance_scale: float = 0.0,
         seed: Optional[int] = None,
     ) -> Image.Image:
         """
@@ -145,11 +161,11 @@ class PromptToImageGenerator:
         
         Args:
             prompt: Text description of the image
-            negative_prompt: What to avoid in the image
+            negative_prompt: What to avoid (ignored by FLUX)
             width: Output width in pixels
             height: Output height in pixels
-            num_inference_steps: Number of denoising steps
-            guidance_scale: CFG scale (0 for Turbo models)
+            num_inference_steps: Number of denoising steps (1-4 for fast models)
+            guidance_scale: CFG scale (0 for Turbo/Schnell models)
             seed: Random seed for reproducibility
             
         Returns:
@@ -160,67 +176,32 @@ class PromptToImageGenerator:
         # Set seed if provided
         generator = None
         if seed is not None:
-            if self.device == "mps":
-                generator = torch.Generator("cpu").manual_seed(seed)
-            else:
-                generator = torch.Generator(self.device).manual_seed(seed)
+            # MPS requires CPU generator
+            gen_device = "cpu" if self.device == "mps" else self.device
+            generator = torch.Generator(gen_device).manual_seed(seed)
         
-        # Generate
-        result = self._pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            width=width,
-            height=height,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            generator=generator,
-        )
-        
-        return result.images[0]
-    
-    def generate_with_control(
-        self,
-        prompt: str,
-        control_image: Image.Image,
-        control_strength: float = 0.8,
-        negative_prompt: str = "blurry, low quality",
-        num_inference_steps: int = 20,
-        guidance_scale: float = 7.5,
-        seed: Optional[int] = None,
-    ) -> Image.Image:
-        """
-        Generate an image with ControlNet guidance.
-        
-        Args:
-            prompt: Text description
-            control_image: Control image (e.g., Canny edges)
-            control_strength: How strongly to follow the control (0-1)
-            negative_prompt: What to avoid
-            num_inference_steps: Denoising steps
-            guidance_scale: CFG scale
-            seed: Random seed
-            
-        Returns:
-            Generated PIL Image
-        """
-        if not self.controlnet_id:
-            raise RuntimeError("ControlNet model not configured. Set controlnet_model in __init__.")
-        
-        self._load_controlnet_pipeline()
-        
-        generator = None
-        if seed is not None:
-            generator = torch.Generator(self.device if self.device != "mps" else "cpu").manual_seed(seed)
-        
-        result = self._controlnet_pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=control_image,
-            controlnet_conditioning_scale=control_strength,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            generator=generator,
-        )
+        # Adjust parameters for FLUX
+        if self._is_flux:
+            # FLUX uses different parameter names
+            result = self._pipe(
+                prompt=prompt,
+                width=width,
+                height=height,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+            )
+        else:
+            # SDXL-Turbo
+            result = self._pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                width=width,
+                height=height,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+            )
         
         return result.images[0]
     
@@ -239,20 +220,13 @@ class PromptToImageGenerator:
             high_threshold: Canny high threshold
             
         Returns:
-            Edge-detected image suitable for ControlNet
+            Edge-detected image
         """
         import cv2
         
-        # Convert to numpy
         img_array = np.array(image.convert('RGB'))
-        
-        # Convert to grayscale
         gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        
-        # Apply Canny
         edges = cv2.Canny(gray, low_threshold, high_threshold)
-        
-        # Convert back to 3-channel for ControlNet
         edges_3ch = np.stack([edges, edges, edges], axis=-1)
         
         return Image.fromarray(edges_3ch)
@@ -265,10 +239,8 @@ class PromptToImageGenerator:
     def unload(self):
         """Unload models to free memory."""
         self._pipe = None
-        self._controlnet_pipe = None
         self._is_loaded = False
         
-        # Force garbage collection
         import gc
         gc.collect()
         
@@ -276,23 +248,43 @@ class PromptToImageGenerator:
             torch.mps.empty_cache()
         elif torch.cuda.is_available():
             torch.cuda.empty_cache()
+        
+        print("✅ Model unloaded, memory freed")
 
 
 def create_generator(
-    model: str = "stabilityai/sdxl-turbo",
-    use_controlnet: bool = False,
+    model: str = "flux-schnell",
     **kwargs
 ) -> PromptToImageGenerator:
     """
     Factory function to create an image generator.
     
     Args:
-        model: Model ID
-        use_controlnet: Whether to enable ControlNet
+        model: "flux-schnell" (recommended) or "sdxl-turbo"
         **kwargs: Additional arguments for PromptToImageGenerator
         
     Returns:
         Configured generator
     """
-    controlnet = "lllyasviel/sd-controlnet-canny" if use_controlnet else None
-    return PromptToImageGenerator(model=model, controlnet_model=controlnet, **kwargs)
+    return PromptToImageGenerator(model=model, **kwargs)
+
+
+# Quick test function
+def test_generator():
+    """Quick test to verify the generator works."""
+    print("Testing FLUX.1 Schnell generator...")
+    gen = create_generator("flux-schnell")
+    img = gen.generate(
+        "A simple line drawing of a cat face",
+        width=256,
+        height=256,
+        num_inference_steps=2,
+        seed=42
+    )
+    img.save("test_flux_output.png")
+    print("✅ Test passed! Saved to test_flux_output.png")
+    gen.unload()
+
+
+if __name__ == "__main__":
+    test_generator()

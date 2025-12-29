@@ -45,8 +45,7 @@ class PromptToASCII:
         mapper: MapperType = "random_forest",
         charset: str = "ascii_standard",
         tile_size: Tuple[int, int] = (8, 14),
-        sd_model: str = "stabilityai/sdxl-turbo",
-        use_controlnet: bool = False,
+        sd_model: str = "flux-schnell",  # FLUX.1 Schnell - best quality
         auto_train_rf: bool = True,
         rf_model_path: Optional[str] = None,
     ):
@@ -57,8 +56,7 @@ class PromptToASCII:
             mapper: "aiss", "random_forest", or "both" for comparison
             charset: Character set name (see list_charsets())
             tile_size: Size of each character tile (width, height)
-            sd_model: Stable Diffusion model ID
-            use_controlnet: Enable ControlNet for structural guidance
+            sd_model: "flux-schnell" (best) or "sdxl-turbo" (faster)
             auto_train_rf: Automatically train RF if no model provided
             rf_model_path: Path to pre-trained RF model
         """
@@ -66,7 +64,6 @@ class PromptToASCII:
         self.charset_name = charset
         self.tile_size = tile_size
         self.sd_model = sd_model
-        self.use_controlnet = use_controlnet
         
         # Load charset
         self._charset = get_charset(charset, tile_size)
@@ -92,10 +89,7 @@ class PromptToASCII:
     def _get_generator(self) -> PromptToImageGenerator:
         """Get or create the image generator."""
         if self._generator is None:
-            self._generator = create_generator(
-                model=self.sd_model,
-                use_controlnet=self.use_controlnet,
-            )
+            self._generator = create_generator(model=self.sd_model)
         return self._generator
     
     def _convert_with_mapper(
