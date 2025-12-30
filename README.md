@@ -428,12 +428,42 @@ MIT License - see [LICENSE](LICENSE)
 
 ---
 
-## 🙏 Acknowledgments
+## � Related Projects & Resources
+
+### ASCII Art Generation
+| Project | Stars | Description |
+|---------|-------|-------------|
+| [DeepAA](https://github.com/OsciiArt/DeepAA) | ⭐1.5k | CNN-based ASCII art (NIPS 2017) |
+| [asciiko](https://github.com/xingdi-eric-yuan/asciiko) | - | PyTorch ASCII with video support |
+
+### Vision-Language Models
+| Resource | Use Case |
+|----------|----------|
+| [CLIP (HuggingFace)](https://huggingface.co/docs/transformers/en/model_doc/clip) | Semantic embeddings |
+| [Diffusers](https://github.com/huggingface/diffusers) | Image generation pipelines |
+
+### Semantic Guidance
+| Pipeline | Purpose |
+|----------|---------|
+| `SemanticStableDiffusionPipeline` | SEGA integration |
+| `AttendAndExcitePipeline` | Subject preservation |
+
+### Grammar-Constrained Generation
+| Tool | Use Case |
+|------|----------|
+| [grammar-guide](https://github.com/parkervg/grammar-guide) | Enforce ASCII output validity |
+| [llguidance](https://github.com/guidance-ai/llguidance) | Fast structured outputs |
+| [Lark Parser](https://github.com/lark-parser/lark) | Grammar definition |
+
+---
+
+## �🙏 Acknowledgments
 
 - [Black Forest Labs](https://huggingface.co/black-forest-labs) for FLUX.1 Schnell
 - [HuggingFace](https://huggingface.co) for free inference API
 - [Google](https://ai.google.dev) for Gemini API
 - [Groq](https://groq.com) for fast LLM inference
 - [OpenAI](https://openai.com) for CLIP model
+- [DeepAA](https://github.com/OsciiArt/DeepAA) for CNN architecture inspiration
 - OpenCV community for image processing
-- DeepAA research for CNN architecture inspiration
+
