@@ -21,9 +21,10 @@ class SSIMMapper:
     This preserves local shapes (lines, curves, edges) much better than density.
     """
     
-    def __init__(self, width: int = 80, tile_size: Tuple[int, int] = (10, 20)):
+    def __init__(self, width: int = 80, tile_size: Tuple[int, int] = (10, 20), charset: Optional[str] = None):
         self.width = width
         self.tile_size = tile_size
+        self.charset = charset if charset else CHARSET_STRUCTURAL  # Dynamic charset support
         self.char_rasters: Dict[str, np.ndarray] = {}
         self.char_densities: Dict[str, float] = {}
         
@@ -54,7 +55,7 @@ class SSIMMapper:
              
         w, h = self.tile_size
         
-        for char in CHARSET_STRUCTURAL:
+        for char in self.charset:
             img = Image.new('L', (w, h), color=0) # Black background
             draw = ImageDraw.Draw(img)
             
@@ -73,7 +74,7 @@ class SSIMMapper:
             self.char_densities[char] = np.mean(arr)
             
         # Sort characters by density for optimization
-        self.sorted_chars = sorted(CHARSET_STRUCTURAL, key=lambda c: self.char_densities[c])
+        self.sorted_chars = sorted(self.charset, key=lambda c: self.char_densities[c])
 
     def convert_image(self, image: Image.Image) -> str:
         """
@@ -161,5 +162,5 @@ class SSIMMapper:
         return '\n'.join(lines)
 
 
-def create_ssim_mapper(width: int = 80) -> SSIMMapper:
-    return SSIMMapper(width=width)
+def create_ssim_mapper(width: int = 80, charset: Optional[str] = None) -> SSIMMapper:
+    return SSIMMapper(width=width, charset=charset)

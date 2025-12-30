@@ -42,6 +42,7 @@ class RewriteResult:
     complexity_score: float
     simplification_applied: bool
     classification: str = "organic" # organic | structure | text
+    semantic_palette: list = None
     logs: list = None
 
 
@@ -124,17 +125,19 @@ OUTPUT: "A car silhouette viewed from side: rectangular body with curved roof, t
 ## OUTPUT FORMAT
 Return a JSON object with the following keys:
 - `complexity_score`: A float between 0.0 and 1.0 indicating the prompt's complexity.
-- `classification`: A string, one of "organic", "structure", or "text".
+- `classification`: A string, one of "organic", "structure", "face", or "text".
+- `semantic_palette`: A list of 10-15 Unicode characters that visually match the subject's texture.
 - `rewritten_prompt`: The optimized prompt for ASCII art generation (under 80 words).
 - `negative_prompt`: An optional negative prompt string.
-- `missing_subjects`: A list of subjects from the original prompt that were not explicitly included in the rewritten prompt (for internal verification).
+- `missing_subjects`: A list of subjects from the original prompt that were not explicitly included in the rewritten prompt.
 
 Example JSON Output:
 ```json
 {
     "complexity_score": 0.7,
-    "classification": "organic",
-    "rewritten_prompt": "A majestic eagle with wings spread WIDE horizontally, soaring bird silhouette viewed from front, simple bold black outline on pure white background, no texture, flat 2D icon style",
+    "classification": "face",
+    "semantic_palette": [".", ":", "-", "=", "+", "*", "#", "%", "@", "8"],
+    "rewritten_prompt": "High contrast portrait of a wise old man, deep wrinkles, strong directional lighting from side, distinct eyes and beard, stipple shading style, clean black lines",
     "negative_prompt": "photorealistic, 3D render, blurry, soft focus, gradient, shading, texture, noise, grain, colors, colorful, rainbow, multiple colors, complex background, busy, cluttered, low contrast, gray, dim, dark overall, shadows, realistic lighting, ray tracing, subsurface scattering, photograph, photo, camera, lens flare, bokeh, watermark, text, signature, logo",
     "missing_subjects": []
 }
@@ -429,6 +432,7 @@ class LLMPromptRewriter:
                 complexity_score=initial_complexity,
                 simplification_applied=initial_needs_simplify,
                 classification="organic", # Default classification
+                semantic_palette=["#", "@", "%", ".", ":", "+", "*", "-", "="], # Default palette
                 logs=logs
             )
         
@@ -476,8 +480,10 @@ class LLMPromptRewriter:
             negative = data.get("negative_prompt", "")
             complexity = data.get("complexity_score", 0.5)
             classification = data.get("classification", "organic")
+            palette = data.get("semantic_palette", ["#", "@", "%", ".", ":"])
             
             logs.append(f"Classified as: {classification.upper()}")
+            logs.append(f"🎨 Palette: {''.join(palette[:8])}...")
             
             return RewriteResult(
                 original=prompt,
@@ -487,6 +493,7 @@ class LLMPromptRewriter:
                 complexity_score=complexity,
                 simplification_applied=needs_simplification(complexity),
                 classification=classification,
+                semantic_palette=palette,
                 logs=logs
             )
         except json.JSONDecodeError:
@@ -528,8 +535,10 @@ class LLMPromptRewriter:
             negative = data.get("negative_prompt", "")
             complexity = data.get("complexity_score", 0.5)
             classification = data.get("classification", "organic")
+            palette = data.get("semantic_palette", ["#", "@", "%", ".", ":"])
             
             logs.append(f"Classified as: {classification.upper()}")
+            logs.append(f"🎨 Palette: {''.join(palette[:8])}...")
             
             return RewriteResult(
                 original=prompt,
@@ -539,6 +548,7 @@ class LLMPromptRewriter:
                 complexity_score=complexity,
                 simplification_applied=needs_simplification(complexity),
                 classification=classification,
+                semantic_palette=palette,
                 logs=logs
             )
         except json.JSONDecodeError:

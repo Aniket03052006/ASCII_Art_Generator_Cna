@@ -260,6 +260,45 @@ def preprocess_for_ascii(
     return edges
 
 
+
+def enhance_face_contrast(image: Image.Image) -> Image.Image:
+    """
+    Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to enhance facial details.
+    
+    This is critical for ASCII portraits as it brings out subtle features (eyes, wrinkles)
+    that are otherwise lost in standard global contrast/brightness adjustments.
+    
+    Args:
+        image: PIL Image
+        
+    Returns:
+        Enhanced PIL Image
+    """
+    # Convert to numpy
+    img_arr = np.array(image)
+    
+    # Handle RGB
+    if len(img_arr.shape) == 3:
+        # Convert to LAB color space to enhance Luminance only
+        # This prevents color distortion
+        lab = cv2.cvtColor(img_arr, cv2.COLOR_RGB2LAB)
+        l, a, b = cv2.split(lab)
+        
+        # Apply CLAHE to L channel
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        cl = clahe.apply(l)
+        
+        # Merge back
+        merged = cv2.merge((cl, a, b))
+        enhanced = cv2.cvtColor(merged, cv2.COLOR_LAB2RGB)
+    else:
+        # Grayscale
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(img_arr)
+    
+    return Image.fromarray(enhanced)
+
+
 # Quick comparison test
 if __name__ == "__main__":
     from PIL import Image

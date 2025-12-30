@@ -33,6 +33,7 @@ from ascii_gen.multimodal import CLIPSelector
 from ascii_gen.perceptual import create_ssim_mapper
 from ascii_gen.diff_render import DiffRenderer
 from ascii_gen.exporter import render_ascii_to_image
+from ascii_gen.advanced_preprocessing import enhance_face_contrast
 
 
 # Global models (loaded once)
@@ -128,6 +129,7 @@ def generate_from_prompt(
     quality_mode: str,
     invert_ramp: bool = False,
     auto_route: bool = True,
+    use_semantic_palette: bool = True,
     progress=gr.Progress()
 ):
     """
@@ -138,18 +140,18 @@ def generate_from_prompt(
     
     # Log accumulator
     log_text = "🚀 Starting generation process...\n"
-    yield None, "", "Starting...", "", log_text
+    yield None, "", "Starting...", "", log_text, None
     
     progress(0, "Thinking (LLM)...")
     load_models()
     
     if not online_gen:
-        yield None, "", "❌ Set HF_TOKEN environment variable", "", log_text + "\n❌ HF_TOKEN missing"
+        yield None, "", "❌ Set HF_TOKEN environment variable", "", log_text + "\n❌ HF_TOKEN missing", None
         return
     
     # 1. Thinking / Rewriting Phase
     log_text += "\n🧠 Phase 1: Semantic Understanding & Rewriting\n"
-    yield None, "", "Thinking...", "", log_text
+    yield None, "", "Thinking...", "", log_text, None
     
     rewritten_prompt = prompt
     try:
@@ -169,13 +171,13 @@ def generate_from_prompt(
         log_text += f"  ⚠️ Rewrite Error: {e}\n"
         print(f"Rewrite error: {e}")
             
-    yield None, "", "Generating Image...", "", log_text
+    yield None, "", "Generating Image...", "", log_text, None
 
     # 2. Image Generation Phase
     log_text += "\n🎨 Phase 2: Image Synthesis (FLUX.1 Schnell)\n"
     log_text += f"  • Sending request to HuggingFace Inference API...\n"
     log_text += f"  • Model: black-forest-labs/FLUX.1-schnell\n"
-    yield None, "", "Generating Image...", "", log_text
+    yield None, "", "Generating Image...", "", log_text, None
     
     progress(0.4, "Generating image...")
     # Skip internal preprocessing since we did it explicitly
@@ -183,11 +185,11 @@ def generate_from_prompt(
     
     if image is None:
         log_text += "❌ Image generation failed. Check API key or quota.\n"
-        yield None, "", "Failed", "", log_text
+        yield None, "", "Failed", "", log_text, None
         return
     
     log_text += "  ✅ Image generated successfully (512x384)\n"
-    yield image, "", "Converting...", "", log_text
+    yield image, "", "Converting...", "", log_text, None
     
     # 3. ASCII Conversion Phase
     progress(0.7, "Converting to ASCII...")
@@ -204,19 +206,38 @@ def generate_from_prompt(
         elif cls == "text":
             quality_mode = "Standard (Gradient)"
             reason = "Optimized for Sharp Edges"
-        else: # organic
             quality_mode = "Standard (CNN)"
             reason = "Optimized for Texture/gradients"
+            
+        # Special Face Handling
+        if cls == "face":
+            quality_mode = "Portrait (Gradient)"
+            reason = "Optimized for Facial Features"
+            log_text += f"\n👤 Face Detected! Applying Adaptive Contrast Enhancement (CLAHE)...\n"
+            # Apply enhancement immediately
+            image = enhance_face_contrast(image)
             
         if old_mode != quality_mode:
             log_text += f"  🔀 Smart Router: Detected {cls.upper()} -> Switching to '{quality_mode}'\n"
             log_text += f"     ({reason})\n"
-        else:
             log_text += f"  ✅ Smart Router: Kept '{quality_mode}' (Matches {cls.upper()})\n"
             
+    # SEMANTIC PALETTE LOGIC
+    custom_charset = None
+    if use_semantic_palette and rewriter and 'result' in locals() and result.semantic_palette:
+        palette_str = "".join(result.semantic_palette)
+        if len(palette_str) > 5:
+            custom_charset = palette_str
+            log_text += f"\n🎨 SEMANTIC CALLIGRAM MODE ACTIVATED\n"
+            log_text += f"  • Subject Texture: {result.classification.upper()}\n"
+            log_text += f"  • Generated Palette: {palette_str}\n"
+            log_text += f"  • Forcing 'Deep Structure (SSIM)' to apply palette...\n"
+            quality_mode = "Deep Structure (SSIM)"
+            status_msg = f"Semantic Calligram | Palette: {palette_str[:10]}..."
+
     log_text += f"  • Mode: {quality_mode}\n"
     log_text += f"  • Target Width: {width} chars\n"
-    yield image, "", "Converting...", "", log_text
+    yield image, "", "Converting...", "", log_text, None
     
     # Initialize SSIM mapper lazily if needed
     ssim_mapper = create_ssim_mapper(width=width)
@@ -228,7 +249,7 @@ def generate_from_prompt(
     if quality_mode == "AI Auto-Select (Best Quality)":
         progress(0.8, "🤖 AI evaluating variants...")
         log_text += "  • AI Auto-Select: Generating variants to score with CLIP...\n"
-        yield image, "", "AI Scoring...", "", log_text
+        yield image, "", "AI Scoring...", "", log_text, None
         
         selector = CLIPSelector()
         
@@ -238,7 +259,7 @@ def generate_from_prompt(
             "Standard (CNN)": lambda img, w: cnn_mapper.convert_image(img.resize((w*8, int(w*8*img.height/img.width*0.55)))),
             "Ultra (Gradient)": lambda img, w: image_to_gradient_ascii(img, width=w, ramp="ultra", with_edges=True, edge_weight=0.3),
             "Portrait (Gradient)": lambda img, w: image_to_gradient_ascii(img, width=int(w*1.5), ramp="portrait", with_edges=True, edge_weight=0.2),
-            "Deep Structure (SSIM)": lambda img, w: create_ssim_mapper(width=w).convert_image(img),
+            "Deep Structure (SSIM)": lambda img, w: create_ssim_mapper(width=w, charset=custom_charset).convert_image(img),
         }
         
         # We need to capture logs from CLIPSelector if we want them, but let's just log result
@@ -250,8 +271,9 @@ def generate_from_prompt(
     elif quality_mode == "Deep Structure (SSIM)":
         progress(0.8, "Running Perceptual Optimization...")
         log_text += "  • Optimizing SSIM (Structural Similarity)...\n"
-        yield image, "", "Optimizing...", "", log_text
-        ascii_art = ssim_mapper.convert_image(image)
+        yield image, "", "Optimizing...", "", log_text, None
+        # Pass custom_charset if available (from Semantic Palette)
+        ascii_art = create_ssim_mapper(width=width, charset=custom_charset).convert_image(image)
         status_msg = f"Generated {len(ascii_art.split(chr(10)))} lines | Mode: {quality_mode}"
     elif quality_mode == "Ultra (Gradient)":
         ascii_art = image_to_gradient_ascii(image, width=width, ramp="ultra", with_edges=True, edge_weight=0.3, invert_ramp=invert_ramp)
@@ -499,6 +521,11 @@ def create_interface():
                                 value=True,
                                 info="Automatically switch model based on prompt type (Organic vs Structure)"
                             )
+                            use_semantic_palette = gr.Checkbox(
+                                label="Use Semantic Palette",
+                                value=True,
+                                info="Allow LLM to generate custom character sets (e.g. '~≈' for water)"
+                            )
                         
                         generate_btn = gr.Button("🚀 Generate ASCII Art", variant="primary", size="lg")
                         
@@ -550,7 +577,7 @@ def create_interface():
                 # Event Handlers
                 generate_btn.click(
                     fn=generate_from_prompt,
-                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox],
+                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox, use_semantic_palette],
                     outputs=[preview_image, ascii_output, status_text, preview_html, process_log, output_render],
                 )
             
