@@ -12,13 +12,14 @@ Key Features:
 
 import os
 import re
+import json
 from typing import Optional, Tuple, Dict, Any
 from dataclasses import dataclass
 
-# Try to import Google's new GenAI
+# Try to import Google's GenAI SDK
 try:
-    from google import genai
-    from google.genai import types
+    import google.generativeai as genai
+    from google.generativeai import types
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
@@ -40,13 +41,15 @@ class RewriteResult:
     was_llm_rewritten: bool
     complexity_score: float
     simplification_applied: bool
+    classification: str = "organic" # organic | structure | text
     logs: list = None
 
 
 # =============================================================================
 # Enhanced System Prompt with Few-Shot Examples and Chain-of-Thought
 # =============================================================================
-SYSTEM_PROMPT_V2 = """You are an expert at rewriting prompts for ASCII art generation via Stable Diffusion.
+SYSTEM_PROMPT_V2 = """You are an expert ASCII Art prompt engineer. 
+Your goal is to optimize prompts for a FLUX.1 diffusion model to generate images that convert perfectly to ASCII.
 
 ## YOUR MISSION
 Transform ANY user prompt into one that produces CLEAR, HIGH-CONTRAST images perfect for ASCII conversion.
@@ -119,8 +122,24 @@ REASONING: Car → side view silhouette with wheels and body
 OUTPUT: "A car silhouette viewed from side: rectangular body with curved roof, two circular wheels at bottom, rectangular windows, simple bold outline, minimal details"
 
 ## OUTPUT FORMAT
-Return ONLY the rewritten prompt. No explanations, no quotes, no prefixes.
-Keep under 80 words. Focus on VISUAL DESCRIPTION only."""
+Return a JSON object with the following keys:
+- `complexity_score`: A float between 0.0 and 1.0 indicating the prompt's complexity.
+- `classification`: A string, one of "organic", "structure", or "text".
+- `rewritten_prompt`: The optimized prompt for ASCII art generation (under 80 words).
+- `negative_prompt`: An optional negative prompt string.
+- `missing_subjects`: A list of subjects from the original prompt that were not explicitly included in the rewritten prompt (for internal verification).
+
+Example JSON Output:
+```json
+{
+    "complexity_score": 0.7,
+    "classification": "organic",
+    "rewritten_prompt": "A majestic eagle with wings spread WIDE horizontally, soaring bird silhouette viewed from front, simple bold black outline on pure white background, no texture, flat 2D icon style",
+    "negative_prompt": "photorealistic, 3D render, blurry, soft focus, gradient, shading, texture, noise, grain, colors, colorful, rainbow, multiple colors, complex background, busy, cluttered, low contrast, gray, dim, dark overall, shadows, realistic lighting, ray tracing, subsurface scattering, photograph, photo, camera, lens flare, bokeh, watermark, text, signature, logo",
+    "missing_subjects": []
+}
+```
+"""
 
 
 # Negative prompt to include with image generation
@@ -324,10 +343,14 @@ class LLMPromptRewriter:
         # Try Gemini first (preferred)
         if GEMINI_AVAILABLE and self.gemini_key:
             try:
-                self.gemini_client = genai.Client(api_key=self.gemini_key)
+                # Using genai.configure for API key setup
+                genai.configure(api_key=self.gemini_key)
+                # Initialize the model directly, no need for genai.Client
+                self.gemini_client = genai.GenerativeModel(model_name="gemini-1.5-flash")
                 print("✅ Gemini LLM initialized (v2 enhanced)")
             except Exception as e:
                 print(f"⚠️ Gemini setup failed: {e}")
+                self.gemini_client = None # Ensure client is None if setup fails
         
         # Always try Groq as fallback option
         if GROQ_AVAILABLE and self.groq_key:
@@ -336,6 +359,7 @@ class LLMPromptRewriter:
                 print("✅ Groq LLM initialized (fallback)")
             except Exception as e:
                 print(f"⚠️ Groq setup failed: {e}")
+                self.groq_client = None # Ensure client is None if setup fails
     
     def update_keys(self, gemini_key: Optional[str] = None, groq_key: Optional[str] = None):
         """Update API keys at runtime (useful for web UI)."""
@@ -365,112 +389,171 @@ class LLMPromptRewriter:
         Returns:
             RewriteResult with all metadata
         """
-        # Calculate complexity
-        complexity = calculate_complexity(prompt)
-        needs_simplify = needs_simplification(complexity)
+        logs = []
+        logs.append(f"Analyzing prompt: '{prompt}'")
+
+        # Initial complexity calculation (used if LLM fails or for comparison)
+        initial_complexity = calculate_complexity(prompt)
+        initial_needs_simplify = needs_simplification(initial_complexity)
+        logs.append(f"Initial Complexity Score: {initial_complexity:.2f} ({'High' if initial_needs_simplify else 'Normal'})")
         
-        # Prepare the input prompt
-        if needs_simplify:
-            input_prompt = f"[SIMPLIFY AGGRESSIVELY] {prompt}"
-        else:
-            input_prompt = prompt
-        
-        # Try LLM rewriting
-        rewritten = prompt
-        was_llm = False
+        llm_result: Optional[RewriteResult] = None
         
         if self.is_available:
             # Try Gemini first
             if self.gemini_client:
                 try:
-                    rewritten = self._rewrite_gemini(input_prompt)
-                    was_llm = True
+                    llm_result = self._rewrite_gemini(prompt, logs)
+                    logs.append(f"🤖 LLM Rewrite Success via Gemini")
                 except Exception as e:
-                    print(f"⚠️ Gemini failed ({str(e)[:50]}...), trying Groq...")
+                    logs.append(f"⚠️ Gemini failed ({str(e)[:100]}...), trying Groq...")
             
-            # Fallback to Groq
-            if not was_llm and self.groq_client:
+            # Fallback to Groq if Gemini failed or wasn't available
+            if llm_result is None and self.groq_client:
                 try:
-                    rewritten = self._rewrite_groq(input_prompt)
-                    was_llm = True
+                    llm_result = self._rewrite_groq(prompt, logs)
+                    logs.append(f"🤖 LLM Rewrite Success via Groq")
                 except Exception as e:
-                    print(f"⚠️ Groq also failed: {e}")
+                    logs.append(f"⚠️ Groq also failed: {e}")
+        
+        # If LLM rewriting failed, create a default result
+        if llm_result is None:
+            logs.append("ℹ️ Using rule-based rewrite (LLM unavailable/failed)")
+            rewritten_text = prompt # Fallback to original prompt
+            negative_text = NEGATIVE_PROMPT_TEMPLATE if self.enable_negative_prompt else ""
+            llm_result = RewriteResult(
+                original=prompt,
+                rewritten=rewritten_text,
+                negative_prompt=negative_text,
+                was_llm_rewritten=False,
+                complexity_score=initial_complexity,
+                simplification_applied=initial_needs_simplify,
+                classification="organic", # Default classification
+                logs=logs
+            )
         
         # === Attend-and-Excite: Subject Verification ===
         # Ensure ALL subjects from original prompt appear in rewritten version
-        all_present, missing = verify_subjects_present(prompt, rewritten)
+        all_present, missing = verify_subjects_present(prompt, llm_result.rewritten)
         if not all_present and missing:
-            print(f"⚠️ Attend-and-Excite: Missing subjects detected: {missing}")
-            rewritten = inject_missing_subjects(rewritten, missing)
-            print(f"   ✅ Injected missing subjects into prompt")
+            logs.append(f"⚠️ Attend-and-Excite: Missing subjects detected: {missing}")
+            llm_result.rewritten = inject_missing_subjects(llm_result.rewritten, missing)
+            logs.append(f"   ✅ Injected missing subjects into prompt")
+            # Update missing_subjects in the result if the LLM provided it
+            if "missing_subjects" in llm_result.logs[-1]: # Check if LLM output included this
+                llm_result.logs[-1]["missing_subjects"] = missing # This is a bit hacky, better to pass missing_subjects to LLM
         
-        # Generate negative prompt
-        negative = NEGATIVE_PROMPT_TEMPLATE if self.enable_negative_prompt else ""
+        # Ensure negative prompt is included if enabled
+        if self.enable_negative_prompt and not llm_result.negative_prompt:
+            llm_result.negative_prompt = NEGATIVE_PROMPT_TEMPLATE
+            logs.append("✅ Injected default negative prompt as LLM did not provide one.")
+
+        # Update the logs in the final result
+        llm_result.logs = logs
         
-        # Collect logs
-        logs = []
-        logs.append(f"Analyzing prompt: '{prompt}'")
-        logs.append(f"Complexity Score: {complexity:.2f} ({'High' if needs_simplify else 'Normal'})")
-        if needs_simplify:
-            logs.append("⚠️ Applying simplification rules for better ASCII conversion")
-        
-        if was_llm:
-            logs.append(f"🤖 LLM Rewrite Success via {'Gemini' if self.gemini_client else 'Groq'}")
-        else:
-            logs.append("ℹ️ Using rule-based rewrite (LLM unavailable/failed)")
-            
-        if not all_present and missing:
-            logs.append(f"⚠️ Attend-and-Excite: Detected missing subjects: {missing}")
-            logs.append("✅ Injected missing subjects to ensure presence in output")
-        
-        logs.append(f"Final Prompt: {rewritten}")
-        
-        return RewriteResult(
-            original=prompt,
-            rewritten=rewritten,
-            negative_prompt=negative,
-            was_llm_rewritten=was_llm,
-            complexity_score=complexity,
-            simplification_applied=needs_simplify,
-            logs=logs
-        )
+        return llm_result
     
-    def _rewrite_gemini(self, prompt: str) -> str:
-        """Rewrite using Gemini with enhanced prompt."""
-        full_prompt = f"{SYSTEM_PROMPT_V2}\n\n---\n\nUSER INPUT: \"{prompt}\"\n\nREWRITTEN PROMPT:"
+    def _rewrite_gemini(self, prompt: str, logs: list) -> RewriteResult:
+        """Rewrite using Gemini with enhanced prompt and JSON output."""
+        full_prompt = f"{SYSTEM_PROMPT_V2}\n\n---\n\nUSER INPUT: \"{prompt}\""
         
-        response = self.gemini_client.models.generate_content(
-            model="gemini-2.0-flash-exp",
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                max_output_tokens=200,
-                temperature=0.4,  # Slightly higher for creativity
+        response = self.gemini_client.generate_content(
+            contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
+            generation_config=types.GenerationConfig(
+                max_output_tokens=500, # Increased for JSON output
+                temperature=0.4,
+                response_mime_type="application/json" # Request JSON output
             )
         )
         
-        rewritten = response.text.strip()
-        # Clean up any quotes or prefixes
-        rewritten = re.sub(r'^["\'`]|["\'`]$', '', rewritten)
-        rewritten = re.sub(r'^(rewritten prompt:|output:)\s*', '', rewritten, flags=re.IGNORECASE)
-        return rewritten.strip()
+        response_text = response.text.strip()
+        
+        # Parse JSON
+        try:
+            data = json.loads(response_text)
+            
+            rewritten = data.get("rewritten_prompt", prompt)
+            negative = data.get("negative_prompt", "")
+            complexity = data.get("complexity_score", 0.5)
+            classification = data.get("classification", "organic")
+            
+            logs.append(f"Classified as: {classification.upper()}")
+            
+            return RewriteResult(
+                original=prompt,
+                rewritten=rewritten,
+                negative_prompt=negative,
+                was_llm_rewritten=True,
+                complexity_score=complexity,
+                simplification_applied=needs_simplification(complexity),
+                classification=classification,
+                logs=logs
+            )
+        except json.JSONDecodeError:
+            logs.append(f"⚠️ Gemini JSON Parse Failed, falling back to raw text: {response_text[:100]}...")
+            # Fallback to a basic RewriteResult if JSON parsing fails
+            return RewriteResult(
+                original=prompt,
+                rewritten=response_text, # Use raw response as rewritten
+                negative_prompt="",
+                was_llm_rewritten=True,
+                complexity_score=calculate_complexity(prompt),
+                simplification_applied=needs_simplification(calculate_complexity(prompt)),
+                classification="organic",
+                logs=logs
+            )
     
-    def _rewrite_groq(self, prompt: str) -> str:
-        """Rewrite using Groq with enhanced prompt."""
+    def _rewrite_groq(self, prompt: str, logs: list) -> RewriteResult:
+        """Rewrite using Groq with enhanced prompt and JSON output."""
         response = self.groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_V2},
                 {"role": "user", "content": f'Rewrite this prompt for ASCII art: "{prompt}"'}
             ],
-            max_tokens=200,
+            max_tokens=500, # Increased for JSON output
             temperature=0.4,
+            response_format={"type": "json_object"} # Request JSON output
         )
         
-        rewritten = response.choices[0].message.content.strip()
-        # Clean up
-        rewritten = re.sub(r'^["\'`]|["\'`]$', '', rewritten)
-        rewritten = re.sub(r'^(rewritten prompt:|output:)\s*', '', rewritten, flags=re.IGNORECASE)
-        return rewritten.strip()
+        response_text = response.choices[0].message.content.strip()
+        
+        # Parse JSON
+        try:
+            # Clean markdown code blocks if present
+            clean_response = response_text.replace('```json', '').replace('```', '').strip()
+            data = json.loads(clean_response)
+            
+            rewritten = data.get("rewritten_prompt", prompt)
+            negative = data.get("negative_prompt", "")
+            complexity = data.get("complexity_score", 0.5)
+            classification = data.get("classification", "organic")
+            
+            logs.append(f"Classified as: {classification.upper()}")
+            
+            return RewriteResult(
+                original=prompt,
+                rewritten=rewritten,
+                negative_prompt=negative,
+                was_llm_rewritten=True,
+                complexity_score=complexity,
+                simplification_applied=needs_simplification(complexity),
+                classification=classification,
+                logs=logs
+            )
+        except json.JSONDecodeError:
+            logs.append(f"⚠️ Groq JSON Parse Failed, falling back to raw text: {response_text[:100]}...")
+            # Fallback to a basic RewriteResult if JSON parsing fails
+            return RewriteResult(
+                original=prompt,
+                rewritten=response_text, # Use raw response as rewritten
+                negative_prompt="",
+                was_llm_rewritten=True,
+                complexity_score=calculate_complexity(prompt),
+                simplification_applied=needs_simplification(calculate_complexity(prompt)),
+                classification="organic",
+                logs=logs
+            )
 
 
 # =============================================================================
@@ -566,5 +649,11 @@ if __name__ == "__main__":
         
         print(f"\n📝 Original: {prompt}")
         print(f"   Complexity: {result.complexity_score:.2f} {'⚠️ SIMPLIFY' if result.simplification_applied else ''}")
+        print(f"   Classification: {result.classification.upper()}")
         print(f"   LLM Used: {'✅' if result.was_llm_rewritten else '❌'}")
         print(f"✨ Rewritten: {result.rewritten[:80]}...")
+        if result.negative_prompt:
+            print(f"   Negative: {result.negative_prompt[:80]}...")
+        print(f"   Logs: {result.logs}")
+
+

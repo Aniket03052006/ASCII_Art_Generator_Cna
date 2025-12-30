@@ -87,6 +87,39 @@ def create_html_preview(ascii_text):
     {ascii_text}
     </div>
     """
+def render_ascii_to_image(ascii_text, font_size=14):
+    """Render ASCII text to a PIL Image for downloading."""
+    if not ascii_text: return None
+    
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        try:
+            # Try macOS standard monospace font
+            font = ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", font_size)
+        except:
+            # Fallback
+            font = ImageFont.load_default()
+            
+        lines = ascii_text.split('\n')
+        if not lines: return None
+        
+        # Calculate dimensions
+        dummy_text = "A"
+        left, top, right, bottom = font.getbbox(dummy_text)
+        char_w = right - left
+        char_h = bottom - top + 4 # Add spacing
+        
+        width = max(len(line) for line in lines) * char_w + 40
+        height = len(lines) * char_h + 40
+        
+        image = Image.new('RGB', (width, height), color=(10, 10, 10)) # Dark gray bg
+        draw = ImageDraw.Draw(image)
+        
+        draw.text((20, 20), ascii_text, font=font, fill=(240, 240, 240)) # White text
+        return image
+    except Exception as e:
+        print(f"Render error: {e}")
+        return None
 
 def generate_from_prompt(
     prompt: str, 
@@ -94,10 +127,14 @@ def generate_from_prompt(
     seed: int,
     quality_mode: str,
     invert_ramp: bool = False,
+    auto_route: bool = True,
     progress=gr.Progress()
 ):
-    """Generate ASCII art from text prompt."""
-    if not prompt: yield None, "", "Enter a prompt first", "", "Waiting for input..."
+    """
+    Full pipeline: Prompt -> Rewrite (LLM) -> Generate (FLUX) -> Convert (ASCII)
+    Yields intermediate steps for the "Thinking Process" UI.
+    """
+    if not prompt: yield None, "", "Enter a prompt first", "", "Waiting for input...", None
     
     # Log accumulator
     log_text = "🚀 Starting generation process...\n"
@@ -155,6 +192,28 @@ def generate_from_prompt(
     # 3. ASCII Conversion Phase
     progress(0.7, "Converting to ASCII...")
     log_text += f"\n⚙️  Phase 3: Structural Mapping & ASCII Conversion\n"
+    
+    # Auto-Routing Logic
+    if auto_route and rewriter and 'result' in locals() and result.classification:
+        cls = result.classification.lower()
+        old_mode = quality_mode
+        
+        if cls == "structure":
+            quality_mode = "Deep Structure (SSIM)"
+            reason = "Optimized for Grids/Geometry"
+        elif cls == "text":
+            quality_mode = "Standard (Gradient)"
+            reason = "Optimized for Sharp Edges"
+        else: # organic
+            quality_mode = "Standard (CNN)"
+            reason = "Optimized for Texture/gradients"
+            
+        if old_mode != quality_mode:
+            log_text += f"  🔀 Smart Router: Detected {cls.upper()} -> Switching to '{quality_mode}'\n"
+            log_text += f"     ({reason})\n"
+        else:
+            log_text += f"  ✅ Smart Router: Kept '{quality_mode}' (Matches {cls.upper()})\n"
+            
     log_text += f"  • Mode: {quality_mode}\n"
     log_text += f"  • Target Width: {width} chars\n"
     yield image, "", "Converting...", "", log_text
@@ -219,7 +278,13 @@ def generate_from_prompt(
     log_text += "✅ Process Complete!"
     progress(1.0, "Done!")
     
-    yield image, ascii_art, status_msg, create_html_preview(ascii_art), log_text
+    log_text += "✅ Process Complete!"
+    progress(1.0, "Done!")
+    
+    # 5. Render Output Image
+    rendered_img = render_ascii_to_image(ascii_art)
+    
+    yield image, ascii_art, status_msg, create_html_preview(ascii_art), log_text, rendered_img
 
 
 def convert_image(image: Image.Image, width: int, quality_mode: str):
@@ -429,6 +494,11 @@ def create_interface():
                                 value=False,
                                 info="Swap light/dark mapping for dark background output"
                             )
+                            auto_route_checkbox = gr.Checkbox(
+                                label="Smart Auto-Routing",
+                                value=True,
+                                info="Automatically switch model based on prompt type (Organic vs Structure)"
+                            )
                         
                         generate_btn = gr.Button("🚀 Generate ASCII Art", variant="primary", size="lg")
                         
@@ -456,6 +526,9 @@ def create_interface():
                     elem_classes=["ascii-output"],
                 )
                 
+                with gr.Accordion("📷 Rendered Output (Preview & Download)", open=False):
+                     output_render = gr.Image(label="Rendered PNG", type="pil")
+                
                 with gr.Row():
                     export_btn = gr.Button("💾 Download as PNG (Better Quality)", size="sm")
                     download_file = gr.File(label="Download Image", interactive=False, visible=True)
@@ -474,10 +547,11 @@ def create_interface():
                 ex5.click(lambda: "a simple tree with trunk and leafy branches", outputs=prompt_input)
                 ex6.click(lambda: "a simple heart shape", outputs=prompt_input)
                 
+                # Event Handlers
                 generate_btn.click(
                     fn=generate_from_prompt,
-                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox],
-                    outputs=[preview_image, ascii_output, status_text, preview_html, process_log],
+                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox],
+                    outputs=[preview_image, ascii_output, status_text, preview_html, process_log, output_render],
                 )
             
             # Tab 2: Image to ASCII
@@ -585,7 +659,7 @@ if __name__ == "__main__":
     app = create_interface()
     app.launch(
         server_name="0.0.0.0",
-        server_port=7860,
+        server_port=int(os.environ.get("GRADIO_SERVER_PORT", 7860)),
         share=False,
         css=CUSTOM_CSS,
     )

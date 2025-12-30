@@ -1,109 +1,133 @@
 
 import os
+import sys
 import time
-from PIL import Image
+from typing import List, Dict
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from ascii_gen.llm_rewriter import LLMPromptRewriter
 from ascii_gen.online_generator import OnlineGenerator
-from ascii_gen.gradient_mapper import image_to_gradient_ascii
-from ascii_gen.perceptual import create_ssim_mapper
+from ascii_gen.production_training import ProductionCNNMapper
+from PIL import Image
 
-# Test Prompts from User Request
-TEST_CASES = {
-    "spatial_nightmare": "small cat sitting on the back of a large chair next to a tall table",
-    "ambiguity_stress": "bat on a trunk next to a mouse",
-    "complexity_bomb": "cat sitting on a wooden chair in a cozy living room with a fireplace, bookshelf, lamp, rug, and window showing sunset",
-    "impossible_request": "photorealistic 3D rotating rainbow-colored holographic cat with flowing fur dancing in slow motion",
-    "vague_mystery": "thing on stuff",
-    "abstract_challenge": "freedom"
-}
+# Hardcoded token for testing if env var missing
+HF_TOKEN = os.getenv("HF_TOKEN", "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")
 
-# User provided token for testing
-HF_TOKEN = "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"
+STRESS_PROMPTS = [
+    {
+        "name": "Spatial Nightmare",
+        "prompt": "small cat sitting on the back of a large chair next to a tall table",
+        "why": "Tests spatial relationship handling and relative sizing."
+    },
+    {
+        "name": "Ambiguity Stress Test",
+        "prompt": "bat on a trunk next to a mouse",
+        "why": "Tests ambiguous terms (animal vs sports, elephant vs car)."
+    },
+    {
+        "name": "Complexity Bomb",
+        "prompt": "cat sitting on a wooden chair in a cozy living room with a fireplace, bookshelf, lamp, rug, and window showing sunset",
+        "why": "Tests complexity detection (>7 objects)."
+    },
+    {
+        "name": "Impossible Request",
+        "prompt": "photorealistic 3D rotating rainbow-colored holographic cat with flowing fur dancing in slow motion",
+        "why": "Tests impossible constraints (motion, color) -> simplfication."
+    },
+    {
+        "name": "Vague Mystery",
+        "prompt": "thing on stuff",
+        "why": "Tests vague input checks."
+    },
+    {
+        "name": "Abstract Challenge",
+        "prompt": "freedom",
+        "why": "Tests abstract concept handling."
+    }
+]
 
-OUTPUT_DIR = "outputs/stress_tests"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-def run_stress_test():
-    print("🚀 Starting Comprehensive Stress Test Suite...")
+def run_stress_tests():
+    print("🔥 Starting Comprehensive Stress Test Suite...")
+    os.makedirs("outputs/stress_tests", exist_ok=True)
     
-    # Initialize components
-    # Note: Using hardcoded keys from modules implicitly
-    rewriter = LLMPromptRewriter()
-    generator = OnlineGenerator(api_key=HF_TOKEN)
-    ssim_mapper = create_ssim_mapper(width=100)
-    
-    # 1. Run "Spatial Nightmare" first as recommended
-    run_single_case("spatial_nightmare", TEST_CASES["spatial_nightmare"], rewriter, generator, ssim_mapper)
-    
-    # 2. Run others
-    for name, prompt in TEST_CASES.items():
-        if name == "spatial_nightmare": continue
-        run_single_case(name, prompt, rewriter, generator, ssim_mapper)
-        
-def run_single_case(name, prompt, rewriter, generator, ssim_mapper):
-    print(f"\n==================================================")
-    print(f"🧪 Testing Case: {name}")
-    print(f"📝 Input: '{prompt}'")
-    
-    # A. LLM Rewrite
-    print("🤖 (1/3) Rewriting prompt...")
+    # Initialize Models
+    print("Initialize Models...")
     try:
-        result = rewriter.rewrite(prompt)
-        rewritten_text = result.rewritten
-        print(f"   -> Rewritten: {rewritten_text}")
-        
-        # Check for refusal/clarification (Vague Mystery)
-        if "unable" in rewritten_text.lower() or "clarif" in rewritten_text.lower():
-            print(f"   ⚠️ System Refused/Asked Clarification (Expected for vague prompts)")
-            with open(f"{OUTPUT_DIR}/{name}_LOG.txt", "w") as f:
-                f.write(f"Prompt: {prompt}\nResult: Refused/Clarification\nOutput: {rewritten_text}")
-            return
-            
+        rewriter = LLMPromptRewriter()
     except Exception as e:
-        print(f"   ❌ Rewrite Failed: {e}")
-        rewritten_text = prompt
-        
-    # B. Image Generation
-    print("🎨 (2/3) Generating image (this make take 10-20s)...")
-    image = None
-    try:
-        if generator.api_key:
-            image = generator.generate(rewritten_text, width=512, height=512)
-        else:
-            print("   ⚠️ No HF_TOKEN found. Using placeholder image for ASCII test.")
-            # Create a dummy image with some shapes to test ASCII mapper
-            image = Image.new('RGB', (512, 512), color='white')
-            from PIL import ImageDraw
-            draw = ImageDraw.Draw(image)
-            draw.rectangle([100, 100, 400, 400], outline='black', width=5)
-            draw.text((200, 200), name, fill='black')
-            
-        if not image:
-            print("   ❌ Image generation failed")
-            return
-        image.save(f"{OUTPUT_DIR}/{name}.png")
-    except Exception as e:
-        print(f"   ❌ Generation Error: {e}")
+        print(f"Failed to load rewriter: {e}")
         return
 
-    # C. ASCII Conversion (Using multiple modes)
-    print("🔠 (3/3) Converting to ASCII...")
-    
-    # Mode 1: Neat (Gradient)
-    ascii_neat = image_to_gradient_ascii(image, width=100, ramp="neat", with_edges=True, edge_weight=0.6)
-    with open(f"{OUTPUT_DIR}/{name}_NEAT.txt", "w") as f:
-        f.write(ascii_neat)
-        
-    # Mode 2: Deep Structure (SSIM)
     try:
-        ascii_ssim = ssim_mapper.convert_image(image)
-        with open(f"{OUTPUT_DIR}/{name}_SSIM.txt", "w") as f:
-            f.write(ascii_ssim)
+        gen = OnlineGenerator(api_key=HF_TOKEN)
     except Exception as e:
-        print(f"   ❌ SSIM Failed: {e}")
+        print(f"Failed to load generator: {e}")
+        return
+        
+    cnn_mapper = ProductionCNNMapper()
+    try:
+        cnn_mapper.load("models/production_cnn.pth")
+    except:
+        print("Model not found, using untained fallback (ok for flow test)")
 
-    print(f"✅ Case {name} Complete! Saved to {OUTPUT_DIR}/")
-    time.sleep(2) # Be nice to API
+    report = []
+
+    for i, item in enumerate(STRESS_PROMPTS):
+        name = item['name']
+        prompt = item['prompt']
+        why = item['why']
+        
+        print(f"\n[{i+1}/6] Testing: {name}")
+        print(f"📝 Prompt: '{prompt}'")
+        print(f"❓ Goal: {why}")
+        
+        report.append(f"## Test {i+1}: {name}")
+        report.append(f"**Original**: `{prompt}`")
+        report.append(f"**Goal**: {why}")
+        
+        # 1. Rewrite
+        start_t = time.time()
+        res = rewriter.rewrite(prompt)
+        report.append(f"**Complexity**: {res.complexity_score:.2f}")
+        report.append(f"**Classification**: `{res.classification.upper()}`")  # Log Classification
+        report.append(f"**Rewritten**: `{res.rewritten}`")
+        if res.logs:
+             report.append("**Thinking Logs**:")
+             for log in res.logs:
+                 report.append(f"- {log}")
+        
+        print(f"   🧠 Classified as: {res.classification.upper()}") # Console feedback
+        
+        # 2. Generate
+        print("   🎨 Generating...")
+        img = gen.generate(res.rewritten, width=512, height=384, skip_preprocessing=True)
+        
+        if img:
+            img_path = f"outputs/stress_tests/test_{i+1}_{name.replace(' ','_').lower()}.png"
+            img.save(img_path)
+            report.append(f"**Image**: Saved to `{img_path}`")
+            
+            # 3. ASCII
+            print("   ⚙️  Converting...")
+            ascii_art = cnn_mapper.convert_image(img.resize((640, 360))) # rough resize
+            txt_path = img_path.replace('.png', '.txt')
+            with open(txt_path, 'w') as f:
+                f.write(ascii_art)
+            report.append(f"**ASCII**: Saved to `{txt_path}`")
+            report.append(f"\n```\n{ascii_art[:500]}...\n```\n")
+        else:
+            report.append("**Image**: ❌ GENERATION FAILED")
+            
+        print(f"   ✅ Done in {time.time() - start_t:.1f}s")
+        report.append("\n---\n")
+
+    # Save Report
+    with open("outputs/stress_tests/FINAL_REPORT.md", "w") as f:
+        f.write("\n".join(report))
+        
+    print("\n✅ All tests completed. Report saved to outputs/stress_tests/FINAL_REPORT.md")
 
 if __name__ == "__main__":
-    run_stress_test()
+    run_stress_tests()

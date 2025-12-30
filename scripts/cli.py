@@ -23,57 +23,78 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-def load_pipeline(mapper_type="cnn"):
+def load_pipeline(mapper_type="auto"):
     """Load the ASCII art generation pipeline."""
     from ascii_gen import PromptToASCII
     from ascii_gen.production_training import ProductionCNNMapper
+    from ascii_gen.llm_rewriter import LLMPromptRewriter
     
     print("🚀 Initializing Prompt-to-ASCII Pipeline...")
     print("   Model: FLUX.1 Schnell")
-    print("   Mapper:", "Production CNN" if mapper_type == "cnn" else "Random Forest")
-    print()
     
     # Initialize main pipeline
     pipeline = PromptToASCII(
-        mapper="random_forest",
+        mapper="random_forest", # Default fallback
         sd_model="flux-schnell",
         charset="ascii_structural",
     )
     
-    # Load production CNN if available
-    cnn = None
-    if mapper_type == "cnn":
-        cnn = ProductionCNNMapper()
-        try:
-            cnn.load("models/production_cnn.pth")
-            print("✅ Loaded pre-trained CNN model")
-        except:
-            print("📊 Training CNN model (first time only)...")
-            cnn.train(epochs=50)
-            cnn.save("models/production_cnn.pth")
-    
-    return pipeline, cnn
+    # Load Rewriter
+    rewriter = LLMPromptRewriter()
+    if rewriter.is_available:
+        print(f"✅ LLM Rewriter active ({'Gemini' if rewriter.gemini_client else 'Groq'})")
+    else:
+        print("⚠️  LLM Rewriter unavailable (Check keys)")
+        
+    # Load Mappers
+    cnn = ProductionCNNMapper()
+    try:
+        cnn.load("models/production_cnn.pth")
+        print("✅ Loaded Production CNN")
+    except:
+        print("⚠️  CNN model missing")
+        cnn = None
+
+    return pipeline, cnn, rewriter
 
 
-def generate_ascii(pipeline, cnn, prompt: str, width: int = 60, seed: int = None):
+def generate_ascii(pipeline, cnn, rewriter, prompt: str, width: int = 60, seed: int = None):
     """Generate ASCII art from a text prompt."""
-    print(f"\n🎨 Generating: {prompt}")
-    print("⏳ This may take 10-30 seconds...")
     
+    # 1. Reject Complexity / Rewrite
+    working_prompt = prompt
+    if rewriter:
+        print(f"\n🧠 Thinking...")
+        res = rewriter.rewrite(prompt)
+        working_prompt = res.rewritten
+        print(f"   Classified: {res.classification.upper()}")
+        print(f"   Rewritten: {working_prompt}")
+        
+        # Auto-Routing Logic (CLI version)
+        if res.classification == "structure":
+            print("   🔀 Routing to: STRUCTURE (SSIM/RF)")
+            # In CLI, we might default to RF or SSIM. For now, let's stick to standard/CNN but note the classification.
+            # Ideally CLI should support SSIM mapper too.
+        else:
+            print("   🔀 Routing to: ORGANIC (CNN)")
+            
+    print(f"\n🎨 Generating Image...")
     start = time.time()
     
-    # Generate image with FLUX
+    # Generate image with FLUX (skip internal preprocessing since we did it)
     result = pipeline.generate(
-        prompt=prompt,
+        prompt=working_prompt,
         char_width=width,
         seed=seed or int(time.time()) % 10000,
+        skip_preprocessing=True 
     )
     
     gen_time = time.time() - start
     
-    # If CNN mapper available, use it for better quality
+    # 2. Conversion
     if cnn and result.source_image:
-        ascii_text = cnn.convert_image(result.source_image)
+        # Use CNN by default for CLI for now
+        ascii_text = cnn.convert_image(result.source_image.resize((1024, int(1024 * result.source_image.height / result.source_image.width))))
     else:
         ascii_text = result.text
     
@@ -85,7 +106,7 @@ def generate_ascii(pipeline, cnn, prompt: str, width: int = 60, seed: int = None
     return ascii_text, result.source_image
 
 
-def interactive_mode(pipeline, cnn):
+def interactive_mode(pipeline, cnn, rewriter):
     """Interactive REPL mode for continuous prompt input."""
     print("\n" + "=" * 60)
     print("   INTERACTIVE PROMPT-TO-ASCII GENERATOR")
@@ -142,7 +163,7 @@ def interactive_mode(pipeline, cnn):
                 continue
             
             # Generate ASCII art
-            last_ascii, last_image = generate_ascii(pipeline, cnn, prompt, width)
+            last_ascii, last_image = generate_ascii(pipeline, cnn, rewriter, prompt, width)
             
         except KeyboardInterrupt:
             print("\n👋 Interrupted. Goodbye!")
@@ -205,12 +226,12 @@ Examples:
     args = parser.parse_args()
     
     # Load pipeline
-    pipeline, cnn = load_pipeline(args.mapper)
+    pipeline, cnn, rewriter = load_pipeline(args.mapper)
     
     if args.prompt:
         # Single prompt mode
         ascii_text, image = generate_ascii(
-            pipeline, cnn, args.prompt, args.width, args.seed
+            pipeline, cnn, rewriter, args.prompt, args.width, args.seed
         )
         
         if args.output:
@@ -220,7 +241,7 @@ Examples:
             print(f"✅ Saved to {args.output}")
     else:
         # Interactive mode
-        interactive_mode(pipeline, cnn)
+        interactive_mode(pipeline, cnn, rewriter)
 
 
 if __name__ == "__main__":

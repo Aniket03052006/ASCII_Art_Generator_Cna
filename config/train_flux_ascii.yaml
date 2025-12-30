@@ -1,0 +1,64 @@
+---
+job: extension
+config:
+  # FLUX.1 Configuration for "Pre-ASCII" Structural LoRA
+  # Optimized for learning high-frequency grid data (16px alignment)
+  
+  name: "flux_ascii_structure_v1"
+  process:
+    - type: 'sd_trainer'
+      training_folder: "output"
+      device: "cuda:0"
+      trigger_word: "ascii_structure_style"
+      
+      network:
+        type: "lora"
+        linear: 64      # High rank (64-128) is CRITICAL for structural learning
+        linear_alpha: 32 # Stabilized scaling (Rank/2)
+        
+      save:
+        dtype: float16 # Save precision
+        save_every: 250
+        max_step_saves_to_keep: 4
+        
+      datasets:
+        - folder_path: "/workspace/ascii_training_data" # Path in RunPod/container
+          caption_ext: "txt"
+          caption_dropout_rate: 0.05
+          shuffle_tokens: false
+          cache_latents_to_disk: true
+          resolution: [1024, 1024] # STRICT RESOLUTION
+          
+      train:
+        batch_size: 1
+        steps: 3000   # ~3-4 epochs for 1000 images
+        gradient_accumulation_steps: 4 # Smoothing grid artifacts
+        train_unet: true
+        train_text_encoder: false # Keep T5 frozen for concept stability
+        gradient_checkpointing: true
+        noise_scheduler: "flowmatch" 
+        optimizer: "adamw8bit"
+        lr: 4e-4      # Aggressive constant LR
+        ema_config:
+          use_ema: true
+          ema_decay: 0.99
+        dtype: bf16   # BFloat16 mandatory for stability
+        
+      model:
+        name_or_path: "black-forest-labs/FLUX.1-dev"
+        is_flux: true
+        quantize: true # NF4 quantization for 24GB cards (set false for A100)
+        
+      sample:
+        sampler: "flowmatch"
+        sample_every: 250
+        width: 1024
+        height: 1024
+        prompts:
+          - "ascii_structure_style, systematic organic layout, cave system, white on black"
+          - "ascii_structure_style, rigid rectangular rooms, dungeon map, bsp tree"
+          - "ascii_structure_style, winding corridors, maze like structure"
+
+meta:
+  name: "flux_ascii_structure_v1"
+  version: "1.0"

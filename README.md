@@ -145,6 +145,49 @@ blended = cv2.addWeighted(original, 0.6, equalized, 0.4, 0)
 
 ---
 
+## 🧠 Smart Auto-Routing Architecture
+
+The system uses a **Two-Stage Intelligence Pipeline** to optimize ASCII generation:
+
+```mermaid
+graph TD
+    A[User Prompt] --> B[LLM Rewriter]
+    B -->|Analyze| C{Classification}
+    B -->|Rewrite| D[Optimized Image Prompt]
+    
+    C -->|ORGANIC| E[Standard Mode]
+    C -->|STRUCTURE| F[Deep Structure Mode]
+    C -->|TEXT| G[Gradient Mode]
+    
+    subgraph "Stage 1: Semantic Understanding"
+    B
+    C
+    D
+    end
+    
+    D --> H[FLUX.1 Generation]
+    H --> I[High-Contrast Image]
+    
+    subgraph "Stage 2: Structural Conversion"
+    I --> E
+    I --> F
+    I --> G
+    
+    E -->|CNN Mapper| J[ASCII Output]
+    F -->|SSIM Optimization| J
+    G -->|Edge Detection| J
+    end
+```
+
+### How it Works
+1.  **Refinement**: The LLM (Gemini/Llama 3) rewrites your prompt to be "ASCII-friendly" (Silhouettes, High Contrast).
+2.  **Classification**: It tags the prompt as `ORGANIC` (Portraits, Animals), `STRUCTURE` (Maps, Geometry), or `TEXT`.
+3.  **Routing**:
+    *   **Organic** → Uses **Production CNN** (Best for curves & textures).
+    *   **Structure** → Uses **SSIM Optimization** (Best for grids & hard lines).
+    *   **Text** → Uses **Gradient Mapping** (Best for readability).
+
+---
 ### 4. White Threshold for Clean Backgrounds
 
 **The Problem**: Near-white pixels (brightness 230-254) map to faint characters like `.` or `'` → messy "noise" in backgrounds.
@@ -454,6 +497,31 @@ MIT License - see [LICENSE](LICENSE)
 | [grammar-guide](https://github.com/parkervg/grammar-guide) | Enforce ASCII output validity |
 | [llguidance](https://github.com/guidance-ai/llguidance) | Fast structured outputs |
 | [Lark Parser](https://github.com/lark-parser/lark) | Grammar definition |
+
+---
+
+## 🔬 Experimental: "Pre-ASCII" Training Kit
+
+We include a complete research kit to train a custom FLUX.1 LoRA for generating **structurally valid** 16px grid layouts (Roguelike maps, ASCII dungeons).
+
+**Why?** Standard diffusion models fail to generate monospaced grids. This kit solves the "VAE Stride Misalignment" problem by procedurally generating training data that is mathematically locked to the 16x16 pixel stride of the FLUX.1 VAE.
+
+### 1. Generate Dataset
+Manufacture thousands of perfect 1024x1024 training images (no web scraping required):
+
+```bash
+python ascii_gen/training/dataset_generator.py
+```
+*Generates samples in `ascii_training_data/` using Cellular Automata and BSP algorithms.*
+
+### 2. Train LoRA (Requires GPU)
+Use the provided config with [ostris/ai-toolkit](https://github.com/ostris/ai-toolkit) on an A100/H100 machine:
+
+```bash
+# On your GPU server
+python run.py config/train_flux_ascii.yaml
+```
+*Config includes optimized hyperparameters: Rank 64, Alpha 32, Constant LR 4e-4.*
 
 ---
 
