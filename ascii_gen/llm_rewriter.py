@@ -40,6 +40,7 @@ class RewriteResult:
     was_llm_rewritten: bool
     complexity_score: float
     simplification_applied: bool
+    logs: list = None
 
 
 # =============================================================================
@@ -406,6 +407,24 @@ class LLMPromptRewriter:
         # Generate negative prompt
         negative = NEGATIVE_PROMPT_TEMPLATE if self.enable_negative_prompt else ""
         
+        # Collect logs
+        logs = []
+        logs.append(f"Analyzing prompt: '{prompt}'")
+        logs.append(f"Complexity Score: {complexity:.2f} ({'High' if needs_simplify else 'Normal'})")
+        if needs_simplify:
+            logs.append("⚠️ Applying simplification rules for better ASCII conversion")
+        
+        if was_llm:
+            logs.append(f"🤖 LLM Rewrite Success via {'Gemini' if self.gemini_client else 'Groq'}")
+        else:
+            logs.append("ℹ️ Using rule-based rewrite (LLM unavailable/failed)")
+            
+        if not all_present and missing:
+            logs.append(f"⚠️ Attend-and-Excite: Detected missing subjects: {missing}")
+            logs.append("✅ Injected missing subjects to ensure presence in output")
+        
+        logs.append(f"Final Prompt: {rewritten}")
+        
         return RewriteResult(
             original=prompt,
             rewritten=rewritten,
@@ -413,6 +432,7 @@ class LLMPromptRewriter:
             was_llm_rewritten=was_llm,
             complexity_score=complexity,
             simplification_applied=needs_simplify,
+            logs=logs
         )
     
     def _rewrite_gemini(self, prompt: str) -> str:

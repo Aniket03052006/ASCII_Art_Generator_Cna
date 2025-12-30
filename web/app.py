@@ -97,29 +97,80 @@ def generate_from_prompt(
     progress=gr.Progress()
 ):
     """Generate ASCII art from text prompt."""
-    if not prompt: return None, "", "Enter a prompt first", ""
+    if not prompt: yield None, "", "Enter a prompt first", "", "Waiting for input..."
     
-    status_msg = ""
-    progress(0, "Rewriting prompt with LLM...")
+    # Log accumulator
+    log_text = "🚀 Starting generation process...\n"
+    yield None, "", "Starting...", "", log_text
+    
+    progress(0, "Thinking (LLM)...")
     load_models()
     
     if not online_gen:
-        return None, "❌ Set HF_TOKEN environment variable for API access", None
+        yield None, "", "❌ Set HF_TOKEN environment variable", "", log_text + "\n❌ HF_TOKEN missing"
+        return
     
-    progress(0.2, "Generating image...")
-    image = online_gen.generate(prompt, width=512, height=384, seed=seed)
+    # 1. Thinking / Rewriting Phase
+    log_text += "\n🧠 Phase 1: Semantic Understanding & Rewriting\n"
+    yield None, "", "Thinking...", "", log_text
+    
+    rewritten_prompt = prompt
+    try:
+        if rewriter:
+            result = rewriter.rewrite(prompt)
+            
+            # Append detailed thinking logs
+            if result.logs:
+                for log_entry in result.logs:
+                    log_text += f"  • {log_entry}\n"
+            
+            rewritten_prompt = result.rewritten
+            log_text += f"\n✨ Optimized Prompt for FLUX.1: '{rewritten_prompt}'\n"
+        else:
+            log_text += "  ℹ️ Rewriter not initialized, skipping...\n"
+    except Exception as e:
+        log_text += f"  ⚠️ Rewrite Error: {e}\n"
+        print(f"Rewrite error: {e}")
+            
+    yield None, "", "Generating Image...", "", log_text
+
+    # 2. Image Generation Phase
+    log_text += "\n🎨 Phase 2: Image Synthesis (FLUX.1 Schnell)\n"
+    log_text += f"  • Sending request to HuggingFace Inference API...\n"
+    log_text += f"  • Model: black-forest-labs/FLUX.1-schnell\n"
+    yield None, "", "Generating Image...", "", log_text
+    
+    progress(0.4, "Generating image...")
+    # Skip internal preprocessing since we did it explicitly
+    image = online_gen.generate(rewritten_prompt, width=512, height=384, seed=seed, skip_preprocessing=True)
     
     if image is None:
-        return None, "❌ Image generation failed. Check your API key.", None
+        log_text += "❌ Image generation failed. Check API key or quota.\n"
+        yield None, "", "Failed", "", log_text
+        return
     
+    log_text += "  ✅ Image generated successfully (512x384)\n"
+    yield image, "", "Converting...", "", log_text
+    
+    # 3. ASCII Conversion Phase
     progress(0.7, "Converting to ASCII...")
+    log_text += f"\n⚙️  Phase 3: Structural Mapping & ASCII Conversion\n"
+    log_text += f"  • Mode: {quality_mode}\n"
+    log_text += f"  • Target Width: {width} chars\n"
+    yield image, "", "Converting...", "", log_text
     
     # Initialize SSIM mapper lazily if needed
     ssim_mapper = create_ssim_mapper(width=width)
     
+    status_msg = ""
+    ascii_art = ""
+    
     # Choose conversion method based on quality mode
     if quality_mode == "AI Auto-Select (Best Quality)":
         progress(0.8, "🤖 AI evaluating variants...")
+        log_text += "  • AI Auto-Select: Generating variants to score with CLIP...\n"
+        yield image, "", "AI Scoring...", "", log_text
+        
         selector = CLIPSelector()
         
         # Define strategies
@@ -131,11 +182,16 @@ def generate_from_prompt(
             "Deep Structure (SSIM)": lambda img, w: create_ssim_mapper(width=w).convert_image(img),
         }
         
+        # We need to capture logs from CLIPSelector if we want them, but let's just log result
         ascii_art, strategy_name, score = selector.select_best_ascii(image, prompt, width, mappers)
-        status_msg = f"Generated {len(ascii_art.split(chr(10)))} lines | 🤖 AI Selected: {strategy_name} (Score: {score:.3f})"
+        
+        log_text += f"  ✅ AI Selected: {strategy_name} (Score: {score:.3f})\n"
+        status_msg = f"Generated {len(ascii_art.split(chr(10)))} lines | 🤖 AI Selected: {strategy_name}"
         
     elif quality_mode == "Deep Structure (SSIM)":
         progress(0.8, "Running Perceptual Optimization...")
+        log_text += "  • Optimizing SSIM (Structural Similarity)...\n"
+        yield image, "", "Optimizing...", "", log_text
         ascii_art = ssim_mapper.convert_image(image)
         status_msg = f"Generated {len(ascii_art.split(chr(10)))} lines | Mode: {quality_mode}"
     elif quality_mode == "Ultra (Gradient)":
@@ -155,9 +211,15 @@ def generate_from_prompt(
         ascii_art = cnn_mapper.convert_image(image_resized)
         status_msg = f"Generated {len(ascii_art.split(chr(10)))} lines | Mode: {quality_mode}"
     
+    # 4. Final Constraints
+    from ascii_gen.grammar_validator import enforce_grammar
+    log_text += "  • Enforcing visual grammar constraints (rectilinearity)...\n"
+    ascii_art = enforce_grammar(ascii_art)
+    
+    log_text += "✅ Process Complete!"
     progress(1.0, "Done!")
     
-    return image, ascii_art, status_msg, create_html_preview(ascii_art)
+    yield image, ascii_art, status_msg, create_html_preview(ascii_art), log_text
 
 
 def convert_image(image: Image.Image, width: int, quality_mode: str):
@@ -370,6 +432,14 @@ def create_interface():
                         
                         generate_btn = gr.Button("🚀 Generate ASCII Art", variant="primary", size="lg")
                         
+                        with gr.Accordion("🧠 Thinking Process (Live Log)", open=True):
+                            process_log = gr.Textbox(
+                                label="Process Log", 
+                                lines=8, 
+                                interactive=False,
+                                elem_id="process-log"
+                            )
+                            
                         status_text = gr.Textbox(label="Status", interactive=False)
                     
                     with gr.Column(scale=1):
@@ -407,7 +477,7 @@ def create_interface():
                 generate_btn.click(
                     fn=generate_from_prompt,
                     inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox],
-                    outputs=[preview_image, ascii_output, status_text, preview_html],
+                    outputs=[preview_image, ascii_output, status_text, preview_html, process_log],
                 )
             
             # Tab 2: Image to ASCII

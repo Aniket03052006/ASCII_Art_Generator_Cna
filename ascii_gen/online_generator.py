@@ -68,6 +68,7 @@ class OnlineGenerator:
         num_inference_steps: int = 4,
         seed: Optional[int] = None,
         max_retries: int = 3,
+        skip_preprocessing: bool = False,
     ) -> Optional[Image.Image]:
         """
         Generate an image from a text prompt using the cloud API.
@@ -80,6 +81,7 @@ class OnlineGenerator:
             num_inference_steps: Number of steps
             seed: Random seed
             max_retries: Retry count for temporary errors
+            skip_preprocessing: Skip LLM/enhancement (use if already processed)
             
         Returns:
             PIL Image or None on failure
@@ -87,25 +89,30 @@ class OnlineGenerator:
         if not self.api_key:
             raise ValueError("API key required. Set HF_TOKEN environment variable.")
         
-        # Stage 1: Try LLM-powered rewriting (if available)
-        try:
-            from .llm_rewriter import llm_rewrite_prompt
-            rewritten, was_llm = llm_rewrite_prompt(prompt)
-            if was_llm:
-                print(f"🤖 LLM Rewritten: {rewritten[:60]}...")
-                working_prompt = rewritten
-            else:
-                working_prompt = prompt
-        except ImportError:
-            working_prompt = prompt
+        working_prompt = prompt
         
-        # Stage 2: Apply rule-based enhancement
-        from .prompt_engineering import enhance_prompt
-        enhanced_prompt = enhance_prompt(working_prompt)
-        print(f"📝 Enhanced: {enhanced_prompt[:80]}...")
+        if not skip_preprocessing:
+            # Stage 1: Try LLM-powered rewriting (if available)
+            try:
+                from .llm_rewriter import llm_rewrite_prompt
+                rewritten, was_llm = llm_rewrite_prompt(prompt)
+                if was_llm:
+                    print(f"🤖 LLM Rewritten: {rewritten[:60]}...")
+                    working_prompt = rewritten
+            except ImportError:
+                pass
+            
+            # Stage 2: Apply rule-based enhancement
+            try:
+                from .prompt_engineering import enhance_prompt
+                enhanced_prompt = enhance_prompt(working_prompt)
+                print(f"📝 Enhanced: {enhanced_prompt[:80]}...")
+                working_prompt = enhanced_prompt
+            except ImportError:
+                pass
         
         payload = {
-            "inputs": enhanced_prompt,
+            "inputs": working_prompt,
             "parameters": {
                 "width": width,
                 "height": height,
