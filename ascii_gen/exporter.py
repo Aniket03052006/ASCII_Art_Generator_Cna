@@ -2,7 +2,7 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 
-def render_ascii_to_image(ascii_text: str, font_size: int = 18, bg_color: str = "white", text_color: str = "black") -> str:
+def render_ascii_to_image(ascii_text: str, font_size: int = 32, bg_color: str = "#111111", text_color: str = "#eeeeee") -> str:
     """
     Renders an ASCII string to a PNG image.
     Returns the path to the saved image.
@@ -23,12 +23,12 @@ def render_ascii_to_image(ascii_text: str, font_size: int = 18, bg_color: str = 
     # We measure 'A' to get consistent char dims
     left, top, right, bottom = font.getbbox("A")
     char_width = right - left
-    char_height = (bottom - top) + 2 # Add padding
+    char_height = (bottom - top) + 4 # Add more padding
     
     # Calculate Image Size
     max_line_len = max(len(line) for line in lines)
-    img_width = max_line_len * char_width + 40 # Padding
-    img_height = len(lines) * char_height + 40
+    img_width = max_line_len * char_width + 80 # Generous padding
+    img_height = len(lines) * char_height + 80
     
     # Create Image
     image = Image.new("RGB", (img_width, img_height), color=bg_color)

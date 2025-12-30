@@ -13,7 +13,7 @@ from ascii_gen.production_training import ProductionCNNMapper
 from PIL import Image
 
 # Hardcoded token for testing if env var missing
-HF_TOKEN = os.getenv("HF_TOKEN", "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")
+HF_TOKEN = os.getenv("HF_TOKEN", "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")
 
 STRESS_PROMPTS = [
     {

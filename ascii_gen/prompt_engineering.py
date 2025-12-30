@@ -409,7 +409,9 @@ CONCEPT_REFINEMENT: Dict[str, str] = {
     # FOOD / OBJECTS
     # =========================================================================
     r".*\bapple\b.*": 
-        "apple: round fruit shape with slight indent at top, small stem, leaf",
+        "apple: round fruit shape with slight indent at top, small stem, leaf, stipple shading for volume",
+    r".*\bmango\b.*": 
+        "mango fruit illustration: kidney-bean shape, smooth curve, small stem at top. STYLE: Vintage Engraving or Stipple Art. NO SOLID FILL. Use cross-hatching to show roundness. Simple, clean, high contrast black on white.",
     r".*\bpizza\b.*": 
         "pizza: circular pie or triangle slice, toppings as small shapes",
     r".*\bcake\b.*": 

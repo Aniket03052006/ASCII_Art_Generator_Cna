@@ -8,7 +8,7 @@ from ascii_gen.production_training import ProductionCNNMapper
 # The user asks: "Are they really improvements?"
 # We prove it by generating with the raw prompts.
 
-HF_TOKEN = os.getenv("HF_TOKEN", "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")
+HF_TOKEN = os.getenv("HF_TOKEN", "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")
 
 def show_improvements():
     gen = OnlineGenerator(api_key=HF_TOKEN)
