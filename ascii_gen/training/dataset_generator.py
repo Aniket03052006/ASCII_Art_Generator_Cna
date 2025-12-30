@@ -129,8 +129,8 @@ class StructuralGenerator:
                 split_space(x, y, w, split)
                 split_space(x, y+split, w, h-split)
             else:
-                 # Cannot split further, treat as leaf
-                 split_space(x, y, w, h)
+                 # Cannot split further, stop
+                 return
 
 
         split_space(0, 0, self.size, self.size)
@@ -197,21 +197,21 @@ if __name__ == "__main__":
     
     print("🏭 Manufacturing Pre-ASCII Dataset...")
     
-    # Generate 5 Caves
-    for i in range(5):
+    # Generate 25 Caves
+    for i in range(25):
         grid, style = gen.generate_caves()
         render_grid(grid, f"{output_dir}/cave_{i}.png")
         # Save caption
         with open(f"{output_dir}/cave_{i}.txt", "w") as f:
             f.write(f"ascii_structure_style, {style}, high contrast, 16px grid")
             
-    # Generate 5 Dungeons
-    for i in range(5):
+    # Generate 25 Dungeons
+    for i in range(25):
         grid, style = gen.generate_bsp_rooms()
         render_grid(grid, f"{output_dir}/dungeon_{i}.png")
         with open(f"{output_dir}/dungeon_{i}.txt", "w") as f:
             f.write(f"ascii_structure_style, {style}, high contrast, 16px grid")
 
-    print(f"✅ Created 10 sample images in '{output_dir}/'")
+    print(f"✅ Created 50 sample images in '{output_dir}/'")
     print("   Resolution: 1024x1024")
     print("   Alignment: Perfect 16x16 pixel grid")
