@@ -100,6 +100,7 @@ def generate_from_prompt(
     use_semantic_palette: bool = True,
     gen_source: str = "Default (Auto)",
     custom_token: str = "",
+    use_enhanced_mapper: bool = True,
     progress=gr.Progress()
 ):
     """
@@ -251,6 +252,20 @@ def generate_from_prompt(
             log_msg(f"  • Forcing 'Deep Structure (SSIM)' to apply palette...")
             quality_mode = "Deep Structure (SSIM)"
             
+    # ENHANCED MAPPER LOGIC
+    enhanced_mapper_active = False
+    if use_enhanced_mapper:
+        try:
+            from ascii_gen.enhanced_mapper import get_enhanced_mapper
+            em = get_enhanced_mapper()
+            if em.is_available():
+                enhanced_mapper_active = True
+                log_msg(f"\n🧠 Basic ResNet Mapper: ENABLED (140k image training)")
+            else:
+                log_msg(f"\n🧠 Basic ResNet Mapper: Model not found, using standard")
+        except Exception as e:
+            log_msg(f"\n🧠 Basic ResNet Mapper: Failed to load ({e})")
+
     status_msg = ""
     ascii_art = ""
     
@@ -560,6 +575,10 @@ def create_interface():
                                 label="Semantic Palette",
                                 value=True,
                             )
+                             use_enhanced_mapper = gr.Checkbox(
+                                label="🧠 Basic ResNet Mapper",
+                                value=True,
+                            )
                         
                         generate_btn = gr.Button("🚀 Generate ASCII Art", variant="primary", size="lg")
                         
@@ -611,7 +630,7 @@ def create_interface():
                 # Event Handlers
                 generate_btn.click(
                     fn=generate_from_prompt,
-                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox, use_semantic_palette, gen_source, custom_token_input],
+                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox, use_semantic_palette, gen_source, custom_token_input, use_enhanced_mapper],
                     outputs=[preview_image, ascii_output, status_text, preview_html, process_log, output_render],
                 )
             
