@@ -195,6 +195,96 @@ def needs_simplification(complexity_score: float) -> bool:
 
 
 # =============================================================================
+# Attend-and-Excite: Subject Extraction and Verification
+# =============================================================================
+# Inspired by "Attend-and-Excite" (Chefer et al., SIGGRAPH 2023)
+# Ensures ALL subjects mentioned in the prompt appear in the rewritten output
+# Addresses "catastrophic neglect" where subjects are omitted
+
+# Common nouns that should be preserved as subjects
+SUBJECT_PATTERNS = [
+    # Animals
+    r'\b(cat|dog|bird|fish|horse|cow|pig|sheep|lion|tiger|bear|elephant|monkey|mouse|rat|rabbit|fox|wolf|deer|eagle|owl|snake|frog|butterfly|bee|ant)\b',
+    # People
+    r'\b(person|man|woman|boy|girl|child|baby|human|people|warrior|soldier|king|queen|prince|princess|knight)\b',
+    # Objects
+    r'\b(car|truck|bus|bike|bicycle|motorcycle|plane|airplane|boat|ship|train|computer|phone|laptop|keyboard|monitor|table|chair|desk|bed|house|building|tree|flower|sun|moon|star|mountain|river|ocean|sea|lake)\b',
+    # Food
+    r'\b(apple|banana|orange|pizza|burger|cake|bread|coffee|tea|water|wine|beer)\b',
+    # Symbols
+    r'\b(heart|star|circle|triangle|square|diamond|cross|arrow|lightning)\b',
+]
+
+
+def extract_subjects(prompt: str) -> list:
+    """
+    Extract key subjects from a prompt using pattern matching.
+    
+    Based on Attend-and-Excite principle: identify ALL subjects
+    that must appear in the final output.
+    
+    Returns:
+        List of subject words found in the prompt
+    """
+    subjects = []
+    prompt_lower = prompt.lower()
+    
+    for pattern in SUBJECT_PATTERNS:
+        matches = re.findall(pattern, prompt_lower, re.IGNORECASE)
+        subjects.extend(matches)
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_subjects = []
+    for s in subjects:
+        if s.lower() not in seen:
+            seen.add(s.lower())
+            unique_subjects.append(s)
+    
+    return unique_subjects
+
+
+def verify_subjects_present(original: str, rewritten: str) -> tuple:
+    """
+    Verify that all subjects from the original prompt appear in the rewritten version.
+    
+    Implements the "Attend-and-Excite" verification step.
+    
+    Returns:
+        (all_present: bool, missing_subjects: list)
+    """
+    original_subjects = extract_subjects(original)
+    rewritten_lower = rewritten.lower()
+    
+    missing = []
+    for subject in original_subjects:
+        # Check if subject or close variant appears
+        if subject.lower() not in rewritten_lower:
+            # Check for plurals/variants
+            variants = [subject, subject + 's', subject + 'es', subject[:-1] if subject.endswith('s') else subject]
+            if not any(v.lower() in rewritten_lower for v in variants):
+                missing.append(subject)
+    
+    return (len(missing) == 0, missing)
+
+
+def inject_missing_subjects(rewritten: str, missing_subjects: list) -> str:
+    """
+    Inject missing subjects into the rewritten prompt.
+    
+    Ensures semantic faithfulness by explicitly adding neglected subjects.
+    """
+    if not missing_subjects:
+        return rewritten
+    
+    # Create injection phrase
+    subjects_str = ", ".join(missing_subjects)
+    injection = f" Also include: {subjects_str} with clear distinct outlines."
+    
+    return rewritten.strip() + injection
+
+
+# =============================================================================
 # LLM Prompt Rewriter Class
 # =============================================================================
 class LLMPromptRewriter:
@@ -304,6 +394,14 @@ class LLMPromptRewriter:
                     was_llm = True
                 except Exception as e:
                     print(f"⚠️ Groq also failed: {e}")
+        
+        # === Attend-and-Excite: Subject Verification ===
+        # Ensure ALL subjects from original prompt appear in rewritten version
+        all_present, missing = verify_subjects_present(prompt, rewritten)
+        if not all_present and missing:
+            print(f"⚠️ Attend-and-Excite: Missing subjects detected: {missing}")
+            rewritten = inject_missing_subjects(rewritten, missing)
+            print(f"   ✅ Injected missing subjects into prompt")
         
         # Generate negative prompt
         negative = NEGATIVE_PROMPT_TEMPLATE if self.enable_negative_prompt else ""

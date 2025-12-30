@@ -371,14 +371,54 @@ png_path = render_ascii_to_image(ascii_art)
 
 ---
 
-## 📚 References
+## 📚 Research Foundations
 
-1. **Saliency Detection**: Hou, X., & Zhang, L. (2007). Saliency Detection: A Spectral Residual Approach. CVPR.
-2. **ASCII Art ML**: Coumar, S., & Kingston, Z. (2025). Evaluating Machine Learning Approaches for ASCII Art Generation. arXiv.
-3. **Structure-based ASCII**: Xu, X., et al. (2010). Structure-based ASCII Art. SIGGRAPH.
-4. **Prompt Engineering**: Google. (2024). Prompt Engineering Best Practices.
-5. **FLUX.1**: Black Forest Labs. FLUX.1-schnell. HuggingFace.
-6. **CLIP**: Radford, A., et al. (2021). Learning Transferable Visual Models. OpenAI.
+Our approach is grounded in cutting-edge research across computer vision, NLP, and generative AI:
+
+### Core Research Papers
+
+| Paper | Key Contribution | Our Implementation |
+|-------|------------------|-------------------|
+| **CLIP** (Radford et al., 2021) | Dual-encoder for text-image understanding | `clip_selector.py` - AI quality selection |
+| **Attend-and-Excite** (Chefer et al., SIGGRAPH 2023) | Prevent "catastrophic neglect" of subjects | `llm_rewriter.py` - Subject verification |
+| **ASCII Art ML Evaluation** (Coumar & Kingston, 2025) | Random Forest ≈ CNN for tile classification | Both mappers available |
+| **SEGA** (Brack et al., NeurIPS 2023) | Semantic guidance vectors | Concept isolation in prompts |
+| **GRAMMAR-LLM** (Tuccio et al., ACL 2025) | Grammar-constrained decoding | Character ramp as implicit grammar |
+
+### Key Insights Applied
+
+**1. Attend-and-Excite Principle**
+> *"Addresses catastrophic neglect, where generated images fail to represent all subjects"*
+
+We extract subjects from prompts and verify they appear in LLM-rewritten output. Missing subjects are automatically injected.
+
+```python
+# Our implementation in llm_rewriter.py
+subjects = extract_subjects("cat chasing mouse")  # ['cat', 'mouse']
+all_present, missing = verify_subjects_present(original, rewritten)
+if missing:
+    rewritten = inject_missing_subjects(rewritten, missing)
+```
+
+**2. Random Forest ≈ Deep Learning**
+> *"Random Forest achieved competitive performance with CNNs while being 2.5x faster"*
+
+For low-dimensional tile classification (10×10 pixels), classical ML matches neural networks. We offer both.
+
+**3. Semantic Decomposition**
+> *"Complex prompts decompose naturally into non-interfering components"*
+
+Our LLM rewriter parses prompts into spatial components ("LEFT:", "RIGHT:") with isolated semantic concepts.
+
+### Full References
+
+1. Radford, A., et al. (2021). **Learning Transferable Visual Models From Natural Language Supervision (CLIP)**. ICML.
+2. Chefer, H., et al. (2023). **Attend-and-Excite: Attention-Based Semantic Guidance for Text-to-Image Diffusion Models**. SIGGRAPH.
+3. Coumar, S., & Kingston, Z. (2025). **Evaluating Machine Learning Approaches for ASCII Art Generation**. arXiv:2503.14375.
+4. Brack, M., et al. (2023). **SEGA: Semantic Guidance for Instructing Text-to-Image Models**. NeurIPS.
+5. Tuccio, G., et al. (2025). **GRAMMAR-LLM: Grammar-Constrained Natural Language Generation**. ACL Findings.
+6. Hou, X., & Zhang, L. (2007). **Saliency Detection: A Spectral Residual Approach**. CVPR.
+7. Xu, X., et al. (2010). **Structure-based ASCII Art**. SIGGRAPH.
 
 ---
 
