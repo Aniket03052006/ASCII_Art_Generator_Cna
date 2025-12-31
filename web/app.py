@@ -101,6 +101,7 @@ def generate_from_prompt(
     gen_source: str = "Default (Auto)",
     custom_token: str = "",
     use_enhanced_mapper: bool = True,
+    resnet_model: str = "ascii_model.pth (Kaggle 20 epochs)",
     progress=gr.Progress()
 ):
     """
@@ -563,22 +564,44 @@ def create_interface():
                              seed_input = gr.Number(
                                 value=42, label="Seed", precision=0
                             )
-                             invert_ramp_checkbox = gr.Checkbox(
-                                label="Invert Ramp (Dark BG)",
-                                value=False,
-                            )
-                             auto_route_checkbox = gr.Checkbox(
-                                label="Smart Auto-Routing",
-                                value=True,
-                            )
-                             use_semantic_palette = gr.Checkbox(
-                                label="Semantic Palette",
-                                value=True,
-                            )
-                             use_enhanced_mapper = gr.Checkbox(
-                                label="🧠 Basic ResNet Mapper",
-                                value=True,
-                            )
+                        
+                        with gr.Accordion("🎛️ Advanced Options", open=False):
+                            gr.Markdown("**Image Processing:**")
+                            with gr.Row():
+                                invert_ramp_checkbox = gr.Checkbox(
+                                    label="🌙 Dark Background Mode",
+                                    value=False,
+                                    info="Invert character brightness"
+                                )
+                                auto_route_checkbox = gr.Checkbox(
+                                    label="🧭 Smart Auto-Routing",
+                                    value=True,
+                                    info="Auto-select best algorithm"
+                                )
+                            with gr.Row():
+                                use_semantic_palette = gr.Checkbox(
+                                    label="🎨 Semantic Palette",
+                                    value=True,
+                                    info="Use themed character sets"
+                                )
+                            
+                            gr.Markdown("**AI Enhancement (ResNet):**")
+                            with gr.Row():
+                                use_enhanced_mapper = gr.Checkbox(
+                                    label="🧠 Enable ResNet Mapper",
+                                    value=True,
+                                    info="Use trained neural network"
+                                )
+                                resnet_model_selector = gr.Dropdown(
+                                    choices=[
+                                        "ascii_model.pth (Kaggle 20 epochs)",
+                                        "ascii_model_old.pth (Colab 1 epoch)",
+                                        "ascii_resnet18_final.pth (Kaggle final)"
+                                    ],
+                                    value="ascii_model.pth (Kaggle 20 epochs)",
+                                    label="ResNet Model",
+                                    interactive=True
+                                )
                         
                         generate_btn = gr.Button("🚀 Generate ASCII Art", variant="primary", size="lg")
                         
@@ -630,7 +653,7 @@ def create_interface():
                 # Event Handlers
                 generate_btn.click(
                     fn=generate_from_prompt,
-                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox, use_semantic_palette, gen_source, custom_token_input, use_enhanced_mapper],
+                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox, use_semantic_palette, gen_source, custom_token_input, use_enhanced_mapper, resnet_model_selector],
                     outputs=[preview_image, ascii_output, status_text, preview_html, process_log, output_render],
                 )
             
