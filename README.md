@@ -150,33 +150,53 @@ blended = cv2.addWeighted(original, 0.6, equalized, 0.4, 0)
 The system uses a **Two-Stage Intelligence Pipeline** to optimize ASCII generation:
 
 ```mermaid
-graph TD
-    A[User Prompt] --> B[LLM Rewriter]
-    B -->|Analyze| C{Classification}
-    B -->|Rewrite| D[Optimized Image Prompt]
+graph LR
+    %% Styling
+    classDef input fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef ai fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c;
+    classDef logic fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#bf360c;
+    classDef output fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef subprocess fill:#ffffff,stroke:#90a4ae,stroke-width:1px,stroke-dasharray: 5 5;
+
+    %% Nodes
+    User([User Prompt]):::input
     
-    C -->|ORGANIC| E[Standard Mode]
-    C -->|STRUCTURE| F[Deep Structure Mode]
-    C -->|TEXT| G[Gradient Mode]
-    
-    subgraph "Stage 1: Semantic Understanding"
-    B
-    C
-    D
+    subgraph "Phase 1: Semantic Rewrite"
+        LLM[LLM Engine<br>Gemini/Groq/Llama]:::ai
+        Optimize{Better?}:::logic
+        Prompt(Optimized Text):::input
     end
     
-    D --> H[FLUX.1 Generation]
-    H --> I[High-Contrast Image]
-    
-    subgraph "Stage 2: Structural Conversion"
-    I --> E
-    I --> F
-    I --> G
-    
-    E -->|CNN Mapper| J[ASCII Output]
-    F -->|SSIM Optimization| J
-    G -->|Edge Detection| J
+    subgraph "Phase 2: Generation"
+        Flux[FLUX.1 Diffusion<br>High Contrast LoRA]:::ai
+        Image(Base Image):::input
     end
+    
+    subgraph "Phase 3: Conversion Pipeline"
+        direction TB
+        Class{Auto-Router}:::logic
+        
+        Style1[Organic Mode<br>CNN Mapper]:::subprocess
+        Style2[Structure Mode<br>SSIM Mapper]:::subprocess
+        Style3[Text Mode<br>Gradient]:::subprocess
+    end
+    
+    Result[ASCII Artifact]:::output
+    PNG[PNG Render]:::output
+    
+    %% Flow
+    User --> LLM --> Optimize
+    Optimize -->|Yes| Prompt
+    Optimize -->|No| User
+    
+    Prompt --> Flux --> Image --> Class
+    
+    Class -->|Soft curves| Style1
+    Class -->|Hard lines| Style2
+    Class -->|Text/Simple| Style3
+    
+    Style1 & Style2 & Style3 --> Result
+    Result --> PNG
 ```
 
 ### How it Works
@@ -326,29 +346,156 @@ image.save("output.png")
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ System Architecture
+
+### Complete Pipeline Diagram
+
+```mermaid
+flowchart TB
+    subgraph Input["🎯 User Input"]
+        UP[User Prompt]
+        UI[Uploaded Image]
+    end
+
+    subgraph LLM["🧠 LLM Prompt Engineering"]
+        PE["PromptEnhancer<br/>(Rule-based)"]
+        CH["CompositionHandler<br/>(Multi-object)"]
+        LR["LLM Rewriter<br/>(Groq/Gemini)"]
+        
+        PE --> CH --> LR
+    end
+
+    subgraph ImageGen["🎨 Image Generation"]
+        FLUX["FLUX.1 Schnell<br/>(HuggingFace)"]
+        POLL["Pollinations AI<br/>(Fallback)"]
+    end
+
+    subgraph Mappers["⚡ ASCII Mapping"]
+        VIT["ViT Neural Mapper<br/>(256-dim)"]
+        CNN["CNN Mapper<br/>(ResNet18)"]
+        SSIM["SSIM Mapper<br/>(Perceptual)"]
+        GRAD["Gradient Mapper<br/>(Edge-aware)"]
+    end
+    
+    subgraph AutoSelect["🤖 AI Auto-Select"]
+        CLIP["Cloud CLIP API<br/>(Semantic Scoring)"]
+    end
+
+    subgraph Output["📤 Output"]
+        ASCII[ASCII Art Text]
+        RENDER[Rendered PNG]
+    end
+
+    UP --> LLM
+    UI --> Mappers
+    LLM --> |"Enhanced Prompt"| FLUX
+    FLUX --> |"Fallback"| POLL
+    FLUX & POLL --> Mappers
+    
+    Mappers --> AutoSelect
+    AutoSelect --> |"Best Match"| ASCII
+    ASCII --> RENDER
+```
+
+### Component Details
+
+#### Prompt Engineering Layer
+```mermaid
+flowchart LR
+    subgraph PromptEnhancer["prompt_engineering.py"]
+        AT["ACTION_TO_VISUAL<br/>running → legs extended"]
+        FE["FEATURE_ENHANCEMENT<br/>elephant → large ears, trunk"]
+        VE["Visual Enforcers<br/>spread limbs, no overlap"]
+    end
+
+    subgraph CompositionHandler["composition_handler.py"]
+        PP["Preposition Parser<br/>X on Y, A next to B"]
+        ST["Structural Templates<br/>vertical, side_by_side"]
+    end
+
+    subgraph LLMRewriter["llm_rewriter.py"]
+        GROQ["Groq API<br/>(llama-3.1-8b)"]
+        GEMINI["Gemini API<br/>(gemini-1.5-flash)"]
+        FB["Rule-based Fallback"]
+    end
+
+    AT --> FE --> VE --> PP --> ST
+    ST --> GROQ
+    GROQ -.-> |"fails"| GEMINI
+    GEMINI -.-> |"fails"| FB
+```
+
+### API Dependencies
+
+| Token | Environment Variable | Required? | Enables |
+|-------|---------------------|-----------|---------|
+| **HuggingFace** | `HF_TOKEN` | ✅ Yes | Image generation (FLUX.1), CLIP scoring |
+| **Groq** | `GROQ_API_KEY` | Optional | Smart LLM prompt rewriting |
+| **Gemini** | `GEMINI_API_KEY` | Optional | Fallback LLM rewriting |
+
+### File Structure
 
 ```
 ascii_gen/
-├── llm_rewriter.py          # LLM-based prompt enhancement (Gemini/Groq)
-├── prompt_engineering.py    # Rule-based industrial templates
-├── online_generator.py      # HuggingFace API client (FLUX.1)
-├── gradient_mapper.py       # Brightness-to-char with histogram eq
-├── cnn_mapper.py           # CNN character classifier (243K params)
-├── perceptual.py           # SSIM-based structural mapping
-├── clip_selector.py        # CLIP-based quality evaluation
-├── exporter.py             # PNG export with font rendering
-├── charsets.py             # ASCII character sets (70+ chars)
-└── diff_render.py          # Experimental differentiable rendering
+├── prompt_engineering.py    # PromptEnhancer, ACTION_TO_VISUAL, FEATURE_ENHANCEMENT
+├── composition_handler.py   # Multi-object composition detection
+├── llm_rewriter.py          # Groq/Gemini LLM integration
+├── enhanced_mapper.py       # ViT/ResNet neural mapper (256-dim ViT, 128-dim ResNet)
+├── cnn_mapper.py            # CNN-based character selection
+├── perceptual.py            # SSIM-based mapping
+├── gradient_mapper.py       # Edge-aware gradient mapping
+├── multimodal.py            # CLIP API integration for AI Auto-Select
+├── online_generator.py      # FLUX.1 / Pollinations image generation
+├── exporter.py              # PNG export with font rendering
+└── diff_render.py           # Differentiable rendering (experimental)
 
 web/
-├── app.py                  # Gradio web interface
-└── (templates, assets)
+└── app.py                   # Gradio web interface
+
+models/
+├── ascii_vit_final.pth      # Trained ViT model (768→256 dim)
+├── ascii_resnet18_final.pth # Trained ResNet18 model (512→128 dim)
+└── production_cnn.pth       # Production CNN weights
 
 tests/
-├── test_quality.py         # Quality comparison across modes
-├── test_standard.py        # End-to-end pipeline test
-└── test_export.py          # PNG export verification
+├── test_quality.py          # Quality comparison across modes
+├── test_standard.py         # End-to-end pipeline test
+├── repro_composition.py     # Multi-object composition tests
+└── repro_poses.py           # Pose enforcement tests
+```
+
+### Data Flow Example
+
+```
+"circus elephant on ball"
+        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 1. PromptEnhancer.enhance()                                  │
+│    → CompositionHandler detects "elephant ON ball"           │
+│    → FEATURE_ENHANCEMENT adds "large ears, long trunk"       │
+│    → Visual enforcers add "spread limbs, no overlap"         │
+└─────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 2. LLMRewriter.rewrite() via Groq                            │
+│    → Transforms to: "Thick line vector art of circus         │
+│      elephant balancing on ball. Bold black outlines..."     │
+└─────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 3. OnlineGenerator.generate()                                │
+│    → FLUX.1 Schnell generates 512x384 line-art image         │
+│    → Fallback to Pollinations if HuggingFace fails           │
+└─────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 4. AI Auto-Select (CLIPSelector)                             │
+│    → Generate 5 ASCII variants (ViT, CNN, SSIM, Gradient)    │
+│    → Score each with Cloud CLIP semantic matching            │
+│    → Return highest-scoring variant                          │
+└─────────────────────────────────────────────────────────────┘
+        ↓
+    ASCII ART OUTPUT + PNG RENDER
 ```
 
 ---

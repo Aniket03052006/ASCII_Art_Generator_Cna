@@ -103,14 +103,16 @@ class DiffRenderer(nn.Module):
         cols = width
         
         # Initialize logits (learnable parameters)
-        # Start uniform roughly
-        grid_logits = (torch.randn(rows, cols, self.n_chars, device=self.device) * 0.1).clone().detach().requires_grad_(True)
+        # IMPROVED: Bias towards simpler characters (spaces, dots) initially
+        grid_logits = torch.zeros(rows, cols, self.n_chars, device=self.device)
+        # Bias first few chars (space, dots) to start with a "blank canvas"
+        grid_logits[:, :, 0] = 2.0  # Strong bias to space
+        grid_logits = grid_logits.clone().detach().requires_grad_(True)
         
-        optimizer = torch.optim.Adam([grid_logits], lr=0.1)
+        optimizer = torch.optim.Adam([grid_logits], lr=0.15)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=steps, eta_min=0.01)
         
         # Get target embedding
-        # Normalize prompt for consistency (CLIP handles it but good practice)
         inputs = self.clip_processor(text=[prompt], return_tensors="pt", padding=True)
         with torch.no_grad():
             text_features = self.clip_model.get_text_features(**inputs.to(self.device))
@@ -125,14 +127,13 @@ class DiffRenderer(nn.Module):
             soft_image = self(grid_logits) # (1, 1, H, W)
             
             # 2. Augmentation / Resizing for CLIP
-            # CLIP expects 224x224 RGB.
-            # We have Grayscale. Replicate channels.
             img_224 = F.interpolate(soft_image, size=(224, 224), mode='bilinear')
             img_rgb = img_224.repeat(1, 3, 1, 1) # (1, 3, 224, 224)
             
+            # IMPROVED: Invert for white-on-black (CLIP sees more contrast)
+            img_rgb = 1.0 - img_rgb
+            
             # Normalize (approximate CLIP stats)
-            # CLIP uses mean=[0.481, ...], std=[0.268, ...]
-            # We act on 0-1 range roughly
             img_norm = (img_rgb - 0.481) / 0.268
             
             # 3. Compute Image Embedding
@@ -142,21 +143,26 @@ class DiffRenderer(nn.Module):
             # 4. Loss = 1 - CosineSimilarity
             loss = 1.0 - (text_features @ image_features.T).mean()
             
-            # Add entropy loss to encourage sharp decisions (one char per cell)
-            # Minimize entropy -> Maximize sum(p * log p)
+            # IMPROVED: Stronger entropy regularization for cleaner output
             probs = F.softmax(grid_logits, dim=-1)
             entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1).mean()
             
-            # Ramp up entropy constraint over time for cleaner final output
-            entropy_weight = 0.01 * (i / steps)
-            total_loss = loss + entropy_weight * entropy
+            # Ramp up entropy constraint more aggressively
+            entropy_weight = 0.05 * (i / steps) ** 2
+            
+            # IMPROVED: Add sparsity loss to encourage simpler characters
+            # Bias towards lower-index chars (simpler ones)
+            char_weights = torch.linspace(0, 1, self.n_chars, device=self.device)
+            complexity_penalty = (probs * char_weights).sum(dim=-1).mean() * 0.01
+            
+            total_loss = loss + entropy_weight * entropy + complexity_penalty
             
             total_loss.backward()
             optimizer.step()
             scheduler.step()
             
-            if i % 20 == 0:
-                print(f"   Step {i}/{steps} | Loss: {total_loss.item():.4f}")
+            if i % 50 == 0:
+                print(f"   Step {i}/{steps} | Loss: {loss.item():.4f} | Entropy: {entropy.item():.2f}")
                 
         # Final Generation
         final_indices = torch.argmax(grid_logits, dim=-1) # (Rows, Cols)

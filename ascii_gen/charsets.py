@@ -35,6 +35,9 @@ ASCII_DENSE = " .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&
 # Structural characters - good for edges and lines
 ASCII_STRUCTURAL = " .-_=+|/\\<>()[]{}#@"
 
+# Heavy/Bold characters for clearer boundaries and high contrast
+ASCII_HEAVY = " @#%8&WM$B0OQZEX"
+
 # ANSI block graphics (extended ASCII / Unicode)
 ANSI_BLOCKS = " ░▒▓█▄▀▌▐"
 
@@ -246,6 +249,7 @@ def get_charset(
             "ascii_standard": ASCII_STANDARD,
             "ascii_dense": ASCII_DENSE,
             "ascii_structural": ASCII_STRUCTURAL,
+            "ascii_heavy": ASCII_HEAVY,
             "ansi_blocks": ANSI_BLOCKS,
             "ansi_lines": ANSI_LINES,
             "ansi_full": ANSI_FULL,
@@ -270,6 +274,7 @@ def list_charsets() -> List[str]:
         "ascii_standard",
         "ascii_dense", 
         "ascii_structural",
+        "ascii_heavy",
         "ansi_blocks",
         "ansi_lines",
         "ansi_full",

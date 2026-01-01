@@ -15,6 +15,7 @@ Key Features:
 import re
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from .composition_handler import composition_handler
 
 @dataclass
 class PromptStrategy:
@@ -473,10 +474,10 @@ CONCEPT_REFINEMENT: Dict[str, str] = {
 # =============================================================================
 STYLES = {
     "default": PromptStrategy(
-        style="minimalist line art icon, black and white only, pure black lines on PURE WHITE background",
-        composition="centered on SOLID WHITE background (#FFFFFF), no texture, no shadows, no gradients, lots of white space around subject",
-        rendering="thick bold clean outlines, no shading, no gradients, flat 2D vector style, stark contrast",
-        negative="complex, realistic, photo, shading, texture, gray background, colors, messy, sketch lines, blurry, 3d render, textured background, pattern, noise"
+        style="simple coloring book outline, pure line drawing, ONLY black outlines on white, NO shading NO texture",
+        composition="centered on SOLID WHITE background, empty white space inside shapes, NO fill",
+        rendering="thin clean outlines only, coloring book style, empty interiors, zero shading, zero crosshatching",
+        negative="shading, texture, crosshatching, stippling, hatching, fur, hair, detailed, realistic, photo, 3d, gradient, gray, pattern, sketch lines"
     ),
     "diagram": PromptStrategy(
         style="technical diagram style, schematic blueprint view",
@@ -503,34 +504,38 @@ STYLES = {
 # Ensures prominent features of objects are explicitly requested
 # =============================================================================
 FEATURE_ENHANCEMENT: Dict[str, str] = {
-    # Animals
-    r"\bcat\b": "cat with distinct pointed triangle ears, round eyes, long curved tail",
-    r"\bdog\b": "dog with distinct ears, snout with nose, wagging tail",
-    r"\bbird\b": "bird with distinct beak, wings, and feathered silhouette",
-    r"\bfish\b": "fish with distinct fins, scales pattern, and forked tail",
-    r"\bbutterfly\b": "butterfly with symmetrical wing patterns and antennae",
-    r"\blion\b": "lion with distinctive mane around face and strong body",
-    r"\belephant\b": "elephant with large ears, long trunk, and thick legs",
-    r"\bhorse\b": "horse with flowing mane, muscular body, and long legs",
-    r"\bsnake\b": "snake with coiled or S-curved body, forked tongue visible",
-    r"\bturtle\b": "turtle with patterned shell dome and head poking out",
-    
-    # Humans / Body
-    r"\bface\b": "face with clearly defined eyes, nose, mouth, and expression",
-    r"\bperson\b": "person with distinct head, torso, arms, and legs",
-    r"\bhand\b": "hand with five fingers clearly separated, palm visible",
-    r"\beye\b": "eye with iris circle, pupil, eyelid curve, and lashes",
+    # Animals - Strong emphasis on separation
+    r"\bcat\b": "cat with distinct pointed triangle ears, round eyes, long tail extending away from body, four legs clearly visible",
+    r"\bdog\b": "dog with distinct ears, snout, wagging tail distinct from body, legs distinct",
+    r"\bbird\b": "bird with wings spread or distinct from body, beak visible",
+    r"\bbeetle\b": "beetle with six legs clearly distinguishable and spread out, distinct antennae",
+    r"\bspider\b": "spider with eight legs splayed out radially, distinct from body",
+    r"\blion\b": "lion with mane, tail separate from body, distinct paws",
+    r"\belephant\b": "elephant with trunk extended, ears spread, four legs distinct",
+    r"\bhorse\b": "horse with legs in motion, neck extended, tail flowing away",
     
     # Objects
+    r"\bchair\b": "chair with four distinct legs, open space between legs, seat and back clearly separated",
+    r"\btable\b": "table with legs clearly separated from each other",
+    r"\bcar\b": "car with wheels distinct from body, windows clear",
+    
+    # Inherited defaults
+    r"\bfish\b": "fish with fins extended, tail distinct",
+    r"\bbutterfly\b": "butterfly with wings fully open flat view, antennae",
+    
+    # Humans
+    r"\bperson\b": "person with arms and legs clearly distinct from torso",
+    r"\bhand\b": "hand with five fingers splayed open, distinct gaps between fingers",
+
+    r"\beye\b": "eye with iris circle, pupil, eyelid curve, and lashes",
+    
+    # Other Objects
     r"\bhouse\b": "house with distinct triangular roof, door, square windows, chimney",
     r"\btree\b": "tree with distinct vertical trunk and leafy branches/crown",
-    r"\bcar\b": "car with distinct windows, two wheels visible, body shape",
     r"\bboat\b": "boat with distinct hull, mast or cabin, on water line",
     r"\bplane\b": "airplane with fuselage, two wings, tail fin clearly visible",
     r"\bflower\b": "flower with distinct petals, center, stem, and leaves",
     r"\bclock\b": "clock with circular face, numbers or marks, two hands",
-    r"\bchair\b": "chair with seat, back, and four legs clearly visible",
-    r"\btable\b": "table with flat horizontal top surface and four legs",
     r"\bbook\b": "book with rectangular pages, spine, and cover visible",
     
     # Nature
@@ -551,6 +556,28 @@ class PromptEnhancer:
         self.action_map = ACTION_TO_VISUAL
         self.concept_map = CONCEPT_REFINEMENT
         self.feature_map = FEATURE_ENHANCEMENT
+        self.composition_handler = composition_handler
+
+    def enhance_subject_core(self, text: str) -> str:
+        """
+        Enhances a single subject by translating actions and adding features.
+        Used as a helper for composition handling.
+        """
+        # 1. Translate actions
+        core_text = self.translate_actions(text)
+        
+        # 2. Add features
+        # Only add distinct structure features if NO restricted pose is detected in the specific text segment
+        if not self.is_pose_restricted(text):
+            features = self.get_feature_enhancements(text)
+            if features:
+                # Relaxed check: Append feature unless the EXACT feature string is already present
+                # matching "dog" shouldn't prevent adding "dog with distinct ears"
+                unique_features = [f for f in features if f.lower() not in core_text.lower()]
+                if unique_features:
+                    core_text += ", " + ", ".join(unique_features)
+                
+        return core_text
         
     def translate_actions(self, prompt: str) -> str:
         """Translates dynamic actions to static visual descriptions."""
@@ -560,12 +587,12 @@ class PromptEnhancer:
                 working_prompt = re.sub(pattern, replacement, working_prompt, flags=re.IGNORECASE)
         return working_prompt
 
-    def check_concept_override(self, prompt: str) -> Optional[str]:
-        """Checks if the concept matches a known complex scenario override."""
+    def check_concept_override(self, prompt: str) -> Optional[Tuple[str, str]]:
+        """Checks if the concept matches a known complex scenario override. Returns (override_text, matched_pattern)."""
         prompt_lower = prompt.lower()
         for pattern, override in self.concept_map.items():
             if re.match(pattern, prompt_lower):
-                return override
+                return override, pattern
         return None
 
     def get_feature_enhancements(self, prompt: str) -> List[str]:
@@ -602,7 +629,27 @@ class PromptEnhancer:
         if re.search(r"\b(moon|earth|planet|solar|orbit|atom|molecule|cell)\b", prompt_lower):
             return "diagram"
         
+        if re.search(r"\b(moon|earth|planet|solar|orbit|atom|molecule|cell)\b", prompt_lower):
+            return "diagram"
+        
         return "default"
+
+    def is_pose_restricted(self, prompt: str) -> bool:
+        """
+        Checks if the user explicitly requested a restricted pose (curled, folded, etc).
+        If so, we should NOT enforce spread-out limbs.
+        """
+        # "cUDDLED up" was the user's term too
+        restricted_keywords = [
+            r"curled", r"folded", r"sleeping", r"ball", r"fetal", 
+            r"huddled", r"cuddled", r"bunched", r"coiled", r"shrunk",
+            r"closed", r"contracted"
+        ]
+        prompt_lower = prompt.lower()
+        for kw in restricted_keywords:
+            if re.search(kw, prompt_lower):
+                return True
+        return False
     
     def calculate_prompt_complexity(self, prompt: str) -> float:
         """
@@ -666,39 +713,111 @@ class PromptEnhancer:
             Enhanced prompt optimized for ASCII art generation
         """
         
-        # 1. Check for full concept override (highest accuracy for specific known hard cases)
-        override = self.check_concept_override(prompt)
-        if override:
-            core_prompt = override
+        # 1. Detect Composition
+        comp_match = self.composition_handler.detect_composition(prompt)
+        
+        # 2. Check for Concept Override
+        override_data = self.check_concept_override(prompt)
+        
+        use_composition = False
+        core_prompt = ""
+
+        if comp_match and override_data:
+            # Conflict resolution:
+            # If the override pattern explicitly mentions BOTH subjects, it's a specific "scene" override -> Use Override.
+            # Otherwise, it's likely a generic object override (e.g. "always draw elephant") catching a complex scene -> Use Composition.
+            override_val, override_pattern = override_data
+            
+            # Simple heuristic: check if subjects are roughly in the pattern
+            # Regex patterns can be complex, so we check if the pattern string roughly contains subject words
+            # or if the override text itself is very specific.
+            # Better: Check if the composition match covers "more" of the prompt?
+            # Let's stick to the "Mentions Both" heuristic.
+            
+            # Clean subjects for checking
+            subj_a_simple = comp_match.subject_a.split()[0].lower() # e.g. "cat" from "a cat"
+            subj_b_simple = comp_match.subject_b.split()[0].lower()
+            
+            # Check if pattern seems to account for both
+            # This is tricky with regex strings. 
+            # Alternative: Assume Composition is better UNLESS the override is a known "pair" pattern.
+            # Most pair patterns in CONCEPT_REFINEMENT use ".*A.*B.*|.*B.*A.*"
+            
+            if ".*" in override_pattern and ("|" in override_pattern or override_pattern.count(".*") > 2):
+                 # Likely a complex pattern
+                 use_composition = False
+            else:
+                 # Likely a simple pattern like ".*elephant.*"
+                 use_composition = True
+                 
+        elif comp_match:
+            use_composition = True
+        
+        if use_composition:
+            # Use composition handler
+            # But we want to use the overrides for the individual parts if they exist!
+            # The enhance_subject_core does NOT check overrides (it only does actions/features).
+            # We should probably allow the parts to use overrides? 
+            # Recursion is dangerous if not careful.
+            # Let's verify enhance_subject_core does NOT call enhance. It doesn't.
+            
+            # We need a way to get the "Concept Description" for a single subject without the full pipeline.
+            # Let's define a helper for that.
+            
+            def subject_resolver(text):
+                # Try validation against overrides first
+                ov_data = self.check_concept_override(text)
+                if ov_data:
+                    return ov_data[0] # Return the override text
+                return self.enhance_subject_core(text)
+
+            core_prompt = self.composition_handler.format_composition(
+                comp_match, 
+                subject_resolver
+            )
+            style_key = style_override or self.detect_style(prompt)
+            strategy = STYLES.get(style_key, STYLES["default"])
+
+        elif override_data:
+            # Use the override
+            core_prompt = override_data[0]
             style_key = style_override or self.detect_style(prompt)
             strategy = STYLES.get(style_key, STYLES["default"])
             
-            # Append features even to overrides if applicable
+            # Append features for override case
             additional_features = self.get_feature_enhancements(prompt)
             if additional_features:
-                # Only add features not already in the override
                 for feature in additional_features:
                     if feature.split()[0] not in core_prompt:
                         core_prompt += f", {feature}"
+                        
         else:
-            # 2. General Translation
-            core_prompt = self.translate_actions(prompt)
+            # Fallback
+            core_prompt = self.enhance_subject_core(prompt)
             style_key = style_override or self.detect_style(prompt)
             strategy = STYLES.get(style_key, STYLES["default"])
-            
-            # Add specific feature enhancements
-            additional_features = self.get_feature_enhancements(prompt)
-            if additional_features:
-                core_prompt += ", " + ", ".join(additional_features)
 
         # 3. Construct Final Prompt
         # Formula: [Style] + [Composition] + [Subject/Core] + [Visual Enforcers]
         
-        visual_enforcers = (
-            "distinct silhouettes, generous white space between elements, "
-            "clean sharp edges, prominent features clearly visible, "
+        # Check for restricted pose
+        restricted_pose = self.is_pose_restricted(prompt)
+        
+        base_enforcers = [
+            "distinct silhouettes",
+            "generous white space between elements",
+            "clean sharp edges",
+            "prominent features clearly visible",
             "simple geometric primitives"
-        )
+        ]
+        
+        # If NOT restricted, we force spread out limbs/parts
+        if not restricted_pose:
+            base_enforcers.insert(0, "limbs/parts spread out distinctively")
+            base_enforcers.insert(1, "exploded view spacing")
+            base_enforcers.append("no overlapping parts")
+        
+        visual_enforcers = ", ".join(base_enforcers)
         
         final_prompt = (
             f"{strategy.style}, {strategy.composition}, "

@@ -53,32 +53,25 @@ SYSTEM_PROMPT_V2 = """You are an expert ASCII Art prompt engineer.
 Your goal is to optimize prompts for a FLUX.1 diffusion model to generate images that convert perfectly to ASCII.
 
 ## YOUR MISSION
-Transform ANY user prompt into one that produces CLEAR, HIGH-CONTRAST images that look PREMIUM and ARTISTIC (not cheap clip art), while remaining perfect for ASCII conversion.
+Transform ANY user prompt into PURE LINE DRAWINGS - just outlines, NO FILL, like a coloring book page.
 
 ## ABSOLUTE REQUIREMENTS (NEVER VIOLATE)
-- **BLACK AND WHITE ONLY** - No colors whatsoever
-- **NO PHOTOREALISM** - Never generate photo-like images
-- **LINE ART STYLE** - Everything must be drawn with lines, not rendered realistically
-- **SIMPLE SHAPES** - Prefer geometric, iconic representations over complex details
-- **WHITE BACKGROUND** - Always specify white or light background
+- **OUTLINE ONLY** - JUST the outline/contour of objects, NOTHING INSIDE
+- **COLORING BOOK STYLE** - Empty shapes ready to be colored in (but leave them white)
+- **NO SHADING** - Zero shading, zero crosshatching, zero stippling, zero texture
+- **NO FILL** - Interiors of shapes must be PURE WHITE
+- **BLACK LINES ON WHITE** - Only thin black lines on pure white background
+- **SIMPLE CONTOURS** - Just the outer edge of each shape
+- **WHITE BACKGROUND** - Plain white, no patterns
 
 ## CRITICAL CONSTRAINTS FOR ASCII ART
-ASCII art requires images with:
-- BOLD, CONTINUOUS BLACK OUTLINES (no broken lines)
-- CLEAR BOUNDARIES: Separate subject from background completely
-- HIGH CONTRAST (absolutely no subtle gradients or gray mush)
-- NO SOLID FILL COLORS or flat shading (they disappear or look ghost-like in ASCII).
-- SOLID AREAS MUST BE TEXTURED: Use "cross-hatching", "stippling", or "dense patterns" to represent color/value. 
-- TEXTURE via STROKES: Use "cross-hatching", "stippling", or "woodblock" styles to convey depth without gray gradients.
-- NO "CLIP ART" or "VECTOR ICON" look unless explicitly requested.
-- PREFERRED STYLES (Chosen for ASCII density): 
-  * "Black and white ink sketch on white paper"
-  * "Simple line drawing, minimal details"
-  * "Woodcut print, bold black lines"
-  * "Pen and ink illustration"
-  * "High contrast silhouette"
-- PORTRAITS/FACES: Keep facial features (eyes, nose, mouth) distinct; DO NOT SIMPLIFY FACES into icons. Use dramatic lighting (Rembrandt lighting) to define features.
-- 1-3 MAIN SUBJECTS maximum (if more, select the most important, but try to keep the core interaction)
+- **PURE OUTLINES** - Never add any shading, hatching, or texture to fill areas
+- **LINE DRAWING ONLY** - Like a pencil sketch with just edges traced
+- **EMPTY INTERIORS** - All areas inside outlines must be white
+- **NO WOODCUT** - Woodcut/engraving style adds too much texture - AVOID
+- **NO CROSSHATCHING** - This destroys ASCII readability
+- DO add: clean black outlines, simple shapes, white fill
+- DO NOT add: shading, texture, gradients, crosshatching, stippling
 
 ## REASONING PROCESS (think step-by-step)
 1. IDENTIFY: What are the key subjects in the USER's prompt? List them EXACTLY. **NEVER DROP any element mentioned by the user.**
@@ -167,6 +160,40 @@ Example:
     "negative_prompt": "color, solid fill, gradient, low contrast, gray",
     "style_strategy": "Engraving style used to provide texture without solid fill colors."
 }
+"""
+
+SYSTEM_PROMPT_FLUX = SYSTEM_PROMPT_V2
+
+SYSTEM_PROMPT_POLLINATIONS = """You are an expert ASCII Art prompt engineer.
+Your goal is to optimize prompts for POLLINATIONS AI (SDXL/Turbo) to generate images that convert perfectly to ASCII.
+
+## DIFFERENCE FROM STANDARD
+Pollinations/SDXL tends to add too much detail. You must force it to be SIMPLE and BOLD.
+
+## YOUR MISSION
+Transform prompts into BOLD, HIGH-CONTRAST ICOCONS. Think "Road Sign" or "Clip Art".
+
+## ABSOLUTE REQUIREMENTS
+- **BOLD THICK LINES** - Use "thick lines", "bold marker", "sharpie art" keywords
+- **HIGH CONTRAST** - "Stark black and white", "Monochrome", "Stencil"
+- **NO GREYSCALE** - Avoid "sketch" if it implies messy pencil lines. Use "Vector Art".
+- **FLAT** - "2D", "Flat design", "No depth"
+
+## REASONING PROCESS
+1. IDENTIFY subjects.
+2. SIMPLIFY structure (remove background details).
+3. STYLIZE as "Vector Line Art" or "Stencil".
+
+## STYLE PRIORITY
+- **Preferred**: "Thick line vector art, black and white icon, white background"
+- **Alternative**: "Stencil art, bold black shapes on white"
+
+## FEW-SHOT EXAMPLES
+
+### Example: Cat
+INPUT: "cute cat"
+REWRITE: "Thick line vector art of a cat face. Bold black outlines on pure white background. Minimalist icon style. Sharpie marker drawing. Stencil."
+NEGATIVE_PROMPT: "sketch, pencil, messy, gray, shading, photo, realistic, fur texture"
 """
 
 
@@ -410,7 +437,7 @@ class LLMPromptRewriter:
             "any_available": self.is_available,
         }
     
-    def rewrite(self, prompt: str) -> RewriteResult:
+    def rewrite(self, prompt: str, model_type: str = "flux") -> RewriteResult:
         """
         Rewrite the prompt using LLM with complexity analysis.
         
@@ -427,11 +454,19 @@ class LLMPromptRewriter:
         
         llm_result: Optional[RewriteResult] = None
         
+        # Select System Prompt based on model type
+        system_prompt = SYSTEM_PROMPT_FLUX
+        if "pollinations" in model_type.lower():
+            system_prompt = SYSTEM_PROMPT_POLLINATIONS
+            logs.append(f"Using Pollinations Prompt Strategy")
+        else:
+            logs.append(f"Using FLUX Prompt Strategy")
+        
         if self.is_available:
             # Try Gemini first
             if self.gemini_client:
                 try:
-                    llm_result = self._rewrite_gemini(prompt, logs)
+                    llm_result = self._rewrite_gemini(prompt, logs, system_prompt)
                     logs.append(f"🤖 LLM Rewrite Success via Gemini")
                 except Exception as e:
                     logs.append(f"⚠️ Gemini failed ({str(e)[:100]}...), trying Groq...")
@@ -439,7 +474,7 @@ class LLMPromptRewriter:
             # Fallback to Groq if Gemini failed or wasn't available
             if llm_result is None and self.groq_client:
                 try:
-                    llm_result = self._rewrite_groq(prompt, logs)
+                    llm_result = self._rewrite_groq(prompt, logs, system_prompt)
                     logs.append(f"🤖 LLM Rewrite Success via Groq")
                 except Exception as e:
                     logs.append(f"⚠️ Groq also failed: {e}")
@@ -447,7 +482,11 @@ class LLMPromptRewriter:
         # If LLM rewriting failed, create a default result
         if llm_result is None:
             logs.append("ℹ️ Using rule-based rewrite (LLM unavailable/failed)")
-            rewritten_text = prompt # Fallback to original prompt
+            
+            # Use the PromptEnhancer as a robust fallback
+            from .prompt_engineering import enhance_prompt
+            rewritten_text = enhance_prompt(prompt)
+            
             negative_text = NEGATIVE_PROMPT_TEMPLATE if self.enable_negative_prompt else ""
             llm_result = RewriteResult(
                 original=prompt,
@@ -482,9 +521,9 @@ class LLMPromptRewriter:
         
         return llm_result
     
-    def _rewrite_gemini(self, prompt: str, logs: list) -> RewriteResult:
+    def _rewrite_gemini(self, prompt: str, logs: list, system_prompt: str) -> RewriteResult:
         """Rewrite using Gemini with enhanced prompt and JSON output."""
-        full_prompt = f"{SYSTEM_PROMPT_V2}\n\n---\n\nUSER INPUT: \"{prompt}\""
+        full_prompt = f"{system_prompt}\n\n---\n\nUSER INPUT: \"{prompt}\""
         
         response = self.gemini_client.generate_content(
             contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
@@ -501,7 +540,14 @@ class LLMPromptRewriter:
         try:
             data = json.loads(response_text)
             
-            rewritten = data.get("rewritten_prompt", prompt)
+            # Try multiple possible key names for the rewritten prompt
+            rewritten = (
+                data.get("rewritten_prompt") or 
+                data.get("prompt") or 
+                data.get("optimized_prompt") or 
+                data.get("output") or
+                prompt  # Fallback to original
+            )
             negative = data.get("negative_prompt", "")
             complexity = data.get("complexity_score", 0.5)
             classification = data.get("classification", "organic")
@@ -535,13 +581,13 @@ class LLMPromptRewriter:
                 logs=logs
             )
     
-    def _rewrite_groq(self, prompt: str, logs: list) -> RewriteResult:
+    def _rewrite_groq(self, prompt: str, logs: list, system_prompt: str) -> RewriteResult:
         """Rewrite using Groq with enhanced prompt and JSON output."""
         response = self.groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_V2},
-                {"role": "user", "content": f'Rewrite this prompt for ASCII art: "{prompt}"'}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f'Rewrite this prompt for ASCII art and return the result as a json object: "{prompt}"'}
             ],
             max_tokens=500, # Increased for JSON output
             temperature=0.4,
@@ -556,7 +602,14 @@ class LLMPromptRewriter:
             clean_response = response_text.replace('```json', '').replace('```', '').strip()
             data = json.loads(clean_response)
             
-            rewritten = data.get("rewritten_prompt", prompt)
+            # Try multiple possible key names for the rewritten prompt
+            rewritten = (
+                data.get("rewritten_prompt") or 
+                data.get("prompt") or 
+                data.get("optimized_prompt") or 
+                data.get("output") or
+                prompt  # Fallback to original
+            )
             negative = data.get("negative_prompt", "")
             complexity = data.get("complexity_score", 0.5)
             classification = data.get("classification", "organic")
@@ -611,7 +664,7 @@ def set_api_keys(gemini_key: Optional[str] = None, groq_key: Optional[str] = Non
     rewriter.update_keys(gemini_key, groq_key)
 
 
-def llm_rewrite_prompt(prompt: str) -> Tuple[str, bool]:
+def llm_rewrite_prompt(prompt: str, model_type: str = "flux") -> Tuple[str, bool]:
     """
     Public API: Rewrite a prompt using LLM.
     
@@ -619,11 +672,11 @@ def llm_rewrite_prompt(prompt: str) -> Tuple[str, bool]:
         Tuple of (rewritten_prompt, was_rewritten_by_llm)
     """
     rewriter = get_rewriter()
-    result = rewriter.rewrite(prompt)
+    result = rewriter.rewrite(prompt, model_type)
     return result.rewritten, result.was_llm_rewritten
 
 
-def llm_rewrite_prompt_full(prompt: str) -> RewriteResult:
+def llm_rewrite_prompt_full(prompt: str, model_type: str = "flux") -> RewriteResult:
     """
     Public API: Full rewrite with all metadata.
     
@@ -631,7 +684,7 @@ def llm_rewrite_prompt_full(prompt: str) -> RewriteResult:
         RewriteResult with original, rewritten, negative prompt, etc.
     """
     rewriter = get_rewriter()
-    return rewriter.rewrite(prompt)
+    return rewriter.rewrite(prompt, model_type)
 
 
 def get_negative_prompt() -> str:

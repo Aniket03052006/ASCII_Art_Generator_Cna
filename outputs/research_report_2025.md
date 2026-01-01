@@ -44,7 +44,9 @@ Yes, we can improve, but likely not by changing the *architecture* of the conver
     *   **SSIM Tuning**: Tweaking the weights of the SSIM algorithm for "Neatness" (already started).
 
 2.  **Strategic (High ROI)**:
-    *   **Train the Flux LoRA**: Use the config we found. We need a dataset of ~500 perfect ASCII-friendly line art images.
+    *   **Train the Flux LoRA**: Use the config we found.
+        *   **DATASET BREAKTHROUGH**: Use `mrzjy/ascii_art_generation_140k`.
+        *   **Strategy**: "Reverse-Rendering". Render these 140k ASCII text files into *images* (black text on white). Train Flux to generate these images. This forces the model to learn exact character grid alignment.
     *   **Implement "DeepAA" Global Optimization**: Move from independent tile classification to global optimization (slower, but higher quality).
 
 3.  **Moonshot**:

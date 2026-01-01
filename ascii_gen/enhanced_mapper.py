@@ -24,9 +24,9 @@ class EnhancedASCIIMapper:
         self.device = torch.device("cuda" if torch.cuda.is_available() else 
                                    "mps" if torch.backends.mps.is_available() else "cpu")
         
-        # Default model path
+        # Default model path - use latest Kaggle-trained model
         if model_path is None:
-            model_path = Path(__file__).parent.parent / "models" / "ascii_model.pth"
+            model_path = Path(__file__).parent.parent / "models" / "ascii_resnet18_final.pth"
         
         self.model_path = Path(model_path)
         self.model = None
@@ -49,9 +49,23 @@ class EnhancedASCIIMapper:
             return
             
         try:
-            # Create model architecture
-            self.model = models.resnet18(pretrained=False)
-            self.model.fc = nn.Linear(512, 128)
+            # Create model architecture based on filename
+            is_vit = "vit" in str(self.model_path).lower()
+            
+            if is_vit:
+                try:
+                    # Initialize ViT-B/16 architecture
+                    self.model = models.vit_b_16(weights=None)
+                    # Modify head for feature extraction (256 dim to match checkpoint)
+                    self.model.heads = nn.Linear(768, 256)
+                except AttributeError:
+                    # Fallback for older torchvision versions
+                     self.model = models.vit_b_16(pretrained=False)
+                     self.model.heads = nn.Linear(768, 256)
+            else:
+                # Initialize ResNet18 architecture
+                self.model = models.resnet18(weights=None)
+                self.model.fc = nn.Linear(512, 128)
             
             # Load trained weights
             state_dict = torch.load(self.model_path, map_location=self.device)
@@ -118,10 +132,18 @@ class EnhancedASCIIMapper:
 
 # Singleton instance
 _enhanced_mapper = None
+_current_model_path = None
 
-def get_enhanced_mapper() -> EnhancedASCIIMapper:
-    """Get or create the enhanced mapper instance."""
-    global _enhanced_mapper
-    if _enhanced_mapper is None:
-        _enhanced_mapper = EnhancedASCIIMapper()
+def get_enhanced_mapper(model_path: str = None) -> EnhancedASCIIMapper:
+    """Get or create the enhanced mapper instance with specified model."""
+    global _enhanced_mapper, _current_model_path
+    
+    # If model path changed, reload
+    if model_path and model_path != _current_model_path:
+        _enhanced_mapper = EnhancedASCIIMapper(model_path=model_path)
+        _current_model_path = model_path
+    elif _enhanced_mapper is None:
+        _enhanced_mapper = EnhancedASCIIMapper(model_path=model_path)
+        _current_model_path = model_path
+    
     return _enhanced_mapper

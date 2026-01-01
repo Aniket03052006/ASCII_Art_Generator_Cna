@@ -77,6 +77,7 @@ class OnlineGenerator:
         max_retries: int = 3,
         skip_preprocessing: bool = False,
         log_callback: Optional[callable] = None,
+        model_type: str = "flux",
     ) -> Optional[Image.Image]:
         """
         Generate an image from a text prompt.
@@ -97,7 +98,7 @@ class OnlineGenerator:
             # Stage 1: Try LLM-powered rewriting (if available)
             try:
                 from .llm_rewriter import llm_rewrite_prompt
-                rewritten, was_llm = llm_rewrite_prompt(prompt)
+                rewritten, was_llm = llm_rewrite_prompt(prompt, model_type=model_type)
                 if was_llm:
                     self._log(f"🤖 LLM Rewritten: {rewritten[:60]}...")
                     working_prompt = rewritten
@@ -234,7 +235,28 @@ class OnlineGenerator:
             # Backoff before retry
             time.sleep(2 + attempt)
 
-        self._log("❌ All Fallback Retries Failed.")
+        self._log("❌ All Fallback Retries Failed with Flux.")
+        
+        # Try Pollinations with different model (turbo is faster/more reliable)
+        self._log("\n🔄 Trying Pollinations with turbo model...")
+        turbo_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&model=turbo"
+        
+        for attempt in range(2):
+            try:
+                if attempt > 0:
+                    self._log(f"   ⏳ Retry {attempt+1}/2...")
+                response = requests.get(turbo_url, timeout=90, headers=headers)
+                if response.status_code == 200 and len(response.content) > 4000:
+                    image = Image.open(io.BytesIO(response.content)).convert("RGB")
+                    self._log("✅ Turbo model succeeded!")
+                    return image
+                else:
+                    self._log(f"   ❌ Turbo Error {response.status_code}")
+            except Exception as e:
+                self._log(f"   ❌ Turbo Exception: {e}")
+            time.sleep(2)
+        
+        self._log("❌ All image generation attempts failed. Try again in a moment.")
         return None
 
 

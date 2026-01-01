@@ -65,3 +65,9 @@ test_output.txt
 # Generated Training Data
 ascii_training_data/
 
+
+# Training data (regenerable)
+ascii_training_data_local/
+ascii_hf_raw/
+ascii_training_data.zip
+dataset_generation.log

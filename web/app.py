@@ -17,6 +17,7 @@ Features:
 import gradio as gr
 import os
 import sys
+from pathlib import Path
 
 # Add project to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -74,14 +75,15 @@ def create_html_preview(ascii_text):
     <div style="
         font-family: 'Courier New', monospace; 
         line-height: 1.0; 
-        font-size: 4px; 
+        font-size: 5px; 
         letter-spacing: 0px;
         white-space: pre; 
         overflow-x: auto; 
-        background: #111; 
-        color: #eee; 
+        background: #fff; 
+        color: #000; 
         padding: 20px;
         border-radius: 8px;
+        border: 1px solid #333;
         width: 100%;
         text-align: center;
     ">
@@ -102,6 +104,7 @@ def generate_from_prompt(
     custom_token: str = "",
     use_enhanced_mapper: bool = True,
     resnet_model: str = "ascii_model.pth (Kaggle 20 epochs)",
+    image_gen_model: str = "FLUX.1 Schnell (HuggingFace) - Best Quality",
     progress=gr.Progress()
 ):
     """
@@ -145,7 +148,10 @@ def generate_from_prompt(
     rewritten_prompt = prompt
     try:
         if rewriter:
-            result = rewriter.rewrite(prompt)
+            # Determine prompt strategy based on model
+            model_type = "pollinations" if "pollinations" in image_gen_model.lower() else "flux"
+            
+            result = rewriter.rewrite(prompt, model_type=model_type)
             
             # Append detailed thinking logs
             if result.logs:
@@ -153,7 +159,9 @@ def generate_from_prompt(
                      log_msg(f"  • {log_entry}")
 
             rewritten_prompt = result.rewritten
-            log_msg(f"\n✨ Optimized Prompt for FLUX.1: '{rewritten_prompt}'")
+            
+            target_model_name = "Pollinations" if model_type == "pollinations" else "FLUX.1"
+            log_msg(f"\n✨ Optimized Prompt for {target_model_name}: '{rewritten_prompt}'")
         else:
             log_msg("  ℹ️ Rewriter not initialized, skipping...")
     except Exception as e:
@@ -162,8 +170,14 @@ def generate_from_prompt(
 
     yield None, "", "Generating Image...", "", log_state["text"], None
 
-    # 2. Image Generation Phase
-    log_msg("\n🎨 Phase 2: Image Synthesis (FLUX.1 Schnell)")
+    # 2. Image Generation Phase - select model based on user choice
+    selected_gen_model = "HuggingFace FLUX"
+    if "Pollinations FLUX" in image_gen_model:
+        selected_gen_model = "Pollinations FLUX"
+    elif "Pollinations Turbo" in image_gen_model:
+        selected_gen_model = "Pollinations Turbo"
+    
+    log_msg(f"\n🎨 Phase 2: Image Synthesis ({selected_gen_model})")
     if gen_source == "Custom HF Token":
         log_msg("  🔑 Using Custom API Key")
     # online_gen logs itself now via callback
@@ -179,14 +193,39 @@ def generate_from_prompt(
     
     def run_generation():
         try:
-            gen_result["image"] = active_generator.generate(
-                rewritten_prompt, 
-                width=512, 
-                height=384, 
-                seed=seed, 
-                skip_preprocessing=True,
-                log_callback=log_msg
-            )
+            if selected_gen_model == "Pollinations FLUX":
+                # Direct Pollinations FLUX call
+                log_msg("  🌐 Using Pollinations FLUX directly...")
+                gen_result["image"] = active_generator._generate_pollinations(
+                    rewritten_prompt, width=512, height=384, seed=seed
+                )
+            elif selected_gen_model == "Pollinations Turbo":
+                # Direct Pollinations Turbo call
+                log_msg("  🌐 Using Pollinations Turbo directly...")
+                import urllib.parse
+                import requests
+                import io
+                from PIL import Image
+                encoded = urllib.parse.quote(rewritten_prompt)
+                url = f"https://image.pollinations.ai/prompt/{encoded}?width=512&height=384&nologo=true&model=turbo"
+                if seed:
+                    url += f"&seed={seed}"
+                resp = requests.get(url, timeout=90)
+                if resp.status_code == 200:
+                    gen_result["image"] = Image.open(io.BytesIO(resp.content)).convert("RGB")
+                    log_msg("  ✅ Pollinations Turbo generated!")
+                else:
+                    log_msg(f"  ❌ Pollinations Turbo Error: {resp.status_code}")
+            else:
+                # Default: HuggingFace FLUX with fallback chain
+                gen_result["image"] = active_generator.generate(
+                    rewritten_prompt, 
+                    width=512, 
+                    height=384, 
+                    seed=seed, 
+                    skip_preprocessing=True,
+                    log_callback=log_msg
+                )
         except Exception as e:
             log_msg(f"❌ Thread Error: {e}")
         finally:
@@ -243,29 +282,40 @@ def generate_from_prompt(
 
     # SEMANTIC PALETTE LOGIC
     custom_charset = None
-    if use_semantic_palette and rewriter and 'result' in locals() and result.semantic_palette:
-        palette_str = "".join(result.semantic_palette)
-        if len(palette_str) > 5:
-            custom_charset = palette_str
-            log_msg(f"\n🎨 SEMANTIC CALLIGRAM MODE ACTIVATED")
-            log_msg(f"  • Subject Texture: {result.classification.upper()}")
-            log_msg(f"  • Generated Palette: {palette_str}")
-            log_msg(f"  • Forcing 'Deep Structure (SSIM)' to apply palette...")
-            quality_mode = "Deep Structure (SSIM)"
+    if use_semantic_palette:
+        # Check for bold keywords first
+        bold_keywords = ["bold", "thick", "heavy", "strong", "dark", "outline", "solid"]
+        if any(k in prompt.lower() for k in bold_keywords):
+            from ascii_gen.charsets import ASCII_HEAVY
+            custom_charset = ASCII_HEAVY
+            log_msg(f"  🎨 Palette Switch: Using BOLD/HEAVY characters for clarity")
+        elif rewriter and 'result' in locals() and result.semantic_palette:
+            palette_str = "".join(result.semantic_palette)
+            if len(palette_str) > 5:
+                custom_charset = palette_str
+                log_msg(f"  🎨 Semantic Palette: Custom charset generated ({len(custom_charset)} chars)")
+                log_msg(f"  • Subject Texture: {result.classification.upper()}")
+                log_msg(f"  • Generated Palette: {palette_str}")
+                log_msg(f"  • Forcing 'Deep Structure (SSIM)' to apply palette...")
+                quality_mode = "Deep Structure (SSIM)"
             
     # ENHANCED MAPPER LOGIC
     enhanced_mapper_active = False
     if use_enhanced_mapper:
         try:
             from ascii_gen.enhanced_mapper import get_enhanced_mapper
-            em = get_enhanced_mapper()
+            # Extract model filename from dropdown selection
+            model_filename = resnet_model.split(" ")[0]  # e.g. "ascii_vit_final.pth"
+            model_path = Path(__file__).parent.parent / "models" / model_filename
+            em = get_enhanced_mapper(model_path=str(model_path))
             if em.is_available():
                 enhanced_mapper_active = True
-                log_msg(f"\n🧠 Basic ResNet Mapper: ENABLED (140k image training)")
+                model_type = "ViT" if "vit" in model_filename.lower() else "ResNet"
+                log_msg(f"\n🧠 Neural Mapper: {model_type} ({model_filename})")
             else:
-                log_msg(f"\n🧠 Basic ResNet Mapper: Model not found, using standard")
+                log_msg(f"\n🧠 Neural Mapper: Model not found ({model_filename})")
         except Exception as e:
-            log_msg(f"\n🧠 Basic ResNet Mapper: Failed to load ({e})")
+            log_msg(f"\n🧠 Neural Mapper: Failed to load ({e})")
 
     status_msg = ""
     ascii_art = ""
@@ -548,60 +598,64 @@ def create_interface():
                             ex5 = gr.Button("🌳 Tree", size="sm", variant="secondary")
                             ex6 = gr.Button("❤️ Heart", size="sm", variant="secondary")
                         
-                        with gr.Row():
-                            width_slider = gr.Slider(
-                                minimum=30, maximum=120, value=80, step=5,
-                                label="Output Width (characters)"
-                            )
-                            quality_selector = gr.Dropdown(
-                                choices=["AI Auto-Select (Best Quality)", "Portrait (Gradient)", "Deep Structure (SSIM)", "Standard (CNN)", "Neat (Gradient)", "Standard (Gradient)", "High (Gradient)", "Ultra (Gradient)"],
-                                value="Standard (CNN)",
-                                label="Quality Mode",
-                                info="AI Auto-Select picks best result. SSIM uses structural optimization (slower)."
-                            )
-                        
-                        with gr.Row():
-                             seed_input = gr.Number(
-                                value=42, label="Seed", precision=0
-                            )
-                        
-                        with gr.Accordion("🎛️ Advanced Options", open=False):
-                            gr.Markdown("**Image Processing:**")
+                        with gr.Group():
+                            gr.Markdown("### 🤖 AI Configuration")
                             with gr.Row():
-                                invert_ramp_checkbox = gr.Checkbox(
-                                    label="🌙 Dark Background Mode",
-                                    value=False,
-                                    info="Invert character brightness"
-                                )
-                                auto_route_checkbox = gr.Checkbox(
-                                    label="🧭 Smart Auto-Routing",
-                                    value=True,
-                                    info="Auto-select best algorithm"
-                                )
-                            with gr.Row():
-                                use_semantic_palette = gr.Checkbox(
-                                    label="🎨 Semantic Palette",
-                                    value=True,
-                                    info="Use themed character sets"
-                                )
-                            
-                            gr.Markdown("**AI Enhancement (ResNet):**")
-                            with gr.Row():
-                                use_enhanced_mapper = gr.Checkbox(
-                                    label="🧠 Enable ResNet Mapper",
-                                    value=True,
-                                    info="Use trained neural network"
-                                )
-                                resnet_model_selector = gr.Dropdown(
+                                image_gen_model = gr.Dropdown(
                                     choices=[
-                                        "ascii_model.pth (Kaggle 20 epochs)",
-                                        "ascii_model_old.pth (Colab 1 epoch)",
-                                        "ascii_resnet18_final.pth (Kaggle final)"
+                                        "FLUX.1 Schnell (HuggingFace) - Best Quality",
+                                        "Pollinations FLUX - Free Fallback",
+                                        "Pollinations Turbo - Fast",
                                     ],
-                                    value="ascii_model.pth (Kaggle 20 epochs)",
-                                    label="ResNet Model",
+                                    value="FLUX.1 Schnell (HuggingFace) - Best Quality",
+                                    label="🎨 Image Generation Model",
+                                    info="Model used to generate the image from prompt",
                                     interactive=True
                                 )
+                            with gr.Row():
+                                resnet_model_selector = gr.Dropdown(
+                                    choices=[
+                                        "ascii_vit_final.pth (ViT Vision Transformer - BEST)",
+                                        "ascii_resnet18_final.pth (ResNet18 - Fast)",
+                                        "ascii_model.pth (ResNet18 - Legacy)",
+                                        "ascii_model_old.pth (Experimental)"
+                                    ],
+                                    value="ascii_vit_final.pth (ViT Vision Transformer - BEST)",
+                                    label="🧠 ASCII Mapping Model",
+                                    info="Neural network for character selection",
+                                    interactive=True,
+                                    scale=2
+                                )
+                                use_enhanced_mapper = gr.Checkbox(
+                                    label="Enable Neural Mapper",
+                                    value=True,
+                                    info="Use AI for character selection",
+                                    scale=1
+                                )
+                        
+                        with gr.Group():
+                            gr.Markdown("### ⚙️ ASCII Settings")
+                            with gr.Row():
+                                width_slider = gr.Slider(
+                                    minimum=30, maximum=150, value=80, step=5,
+                                    label="Output Width",
+                                    info="Character count per line"
+                                )
+                                quality_selector = gr.Dropdown(
+                                    choices=["AI Auto-Select (Best Quality)", "Deep Structure (SSIM)", "Portrait (Gradient)", "Standard (CNN)", "Neat (Gradient)", "Standard (Gradient)", "High (Gradient)", "Ultra (Gradient)"],
+                                    value="AI Auto-Select (Best Quality)",
+                                    label="Render Mode",
+                                    info="Algorithm for converting image to text"
+                                )
+                        
+                        with gr.Accordion("🛠️ Advanced Options", open=False):
+                            with gr.Row():
+                                seed_input = gr.Number(value=42, label="Seed", precision=0)
+                                invert_ramp_checkbox = gr.Checkbox(label="🌙 Dark Mode Invert", value=False)
+                            
+                            with gr.Row():
+                                auto_route_checkbox = gr.Checkbox(label="🧭 Auto-Routing", value=True, info="Smart algorithm switching")
+                                use_semantic_palette = gr.Checkbox(label="🎨 Semantic Palette", value=True, info="Use bold/themed characters")
                         
                         generate_btn = gr.Button("🚀 Generate ASCII Art", variant="primary", size="lg")
                         
@@ -653,7 +707,7 @@ def create_interface():
                 # Event Handlers
                 generate_btn.click(
                     fn=generate_from_prompt,
-                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox, use_semantic_palette, gen_source, custom_token_input, use_enhanced_mapper, resnet_model_selector],
+                    inputs=[prompt_input, width_slider, seed_input, quality_selector, invert_ramp_checkbox, auto_route_checkbox, use_semantic_palette, gen_source, custom_token_input, use_enhanced_mapper, resnet_model_selector, image_gen_model],
                     outputs=[preview_image, ascii_output, status_text, preview_html, process_log, output_render],
                 )
             
