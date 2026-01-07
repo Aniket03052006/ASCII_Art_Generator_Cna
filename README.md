@@ -332,6 +332,65 @@ image.save("output.png")
 
 ---
 
+### 10. Saliency-Guided Edge Detection (`advanced_preprocessing.py`)
+
+**The Problem**: Standard edge detection treats all edges equally → unimportant background edges clutter the output.
+
+**Our Solution**: Use Spectral Residual saliency (Hou & Zhang, 2007) to weight edges by visual importance.
+
+**How It Works**:
+1. Compute saliency map using FFT spectral residual method
+2. Apply Canny edge detection
+3. Weight edges by saliency: important regions get stronger edges
+
+```python
+saliency = compute_saliency_map(image)  # Spectral residual FFT
+edges = cv2.Canny(gray, 50, 150)
+weighted_edges = edges * (0.5 + 0.5 * saliency)  # Boost salient edges
+```
+
+**Impact**: Focuses ASCII detail on important subjects, reduces background noise.
+
+---
+
+### 11. CLAHE for Face Enhancement (`advanced_preprocessing.py`)
+
+**The Problem**: Faces often have subtle tonal variations → ASCII loses facial features.
+
+**Our Solution**: Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) specifically for detected faces.
+
+**Why CLAHE over regular histogram equalization**:
+- Operates on local 8x8 tile regions (not global)
+- Clip limit prevents over-amplification of noise
+- Preserves natural look while enhancing detail
+
+```python
+clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+enhanced = clahe.apply(face_region)
+```
+
+**Impact**: Facial features (eyes, nose, mouth) become clearly visible in ASCII output.
+
+---
+
+### 12. Neural Network Model Comparison
+
+We trained and tested two architectures for character selection:
+
+| Model | Architecture | Feature Dim | Feature Magnitude | Recommendation |
+|-------|--------------|-------------|-------------------|----------------|
+| **ResNet18** | Convolutional | 128 | **2.65** | ⭐ BEST |
+| ViT-B/16 | Transformer | 256 | 0.32 | Undertrained |
+
+**Testing Methodology**:
+- 5 stress test prompts with varying complexity
+- Pollinations API for line-art image generation
+- Full-image feature extraction comparison
+
+**Conclusion**: ResNet18 produces **8x stronger features** than ViT, indicating better structural detail capture for ASCII generation.
+
+---
+
 ## 📊 Quality Modes Comparison
 
 | Mode | Method | Chars | Best For | Speed |
@@ -436,32 +495,40 @@ flowchart LR
 ### File Structure
 
 ```
-ascii_gen/
-├── prompt_engineering.py    # PromptEnhancer, ACTION_TO_VISUAL, FEATURE_ENHANCEMENT
-├── composition_handler.py   # Multi-object composition detection
-├── llm_rewriter.py          # Groq/Gemini LLM integration
-├── enhanced_mapper.py       # ViT/ResNet neural mapper (256-dim ViT, 128-dim ResNet)
-├── cnn_mapper.py            # CNN-based character selection
-├── perceptual.py            # SSIM-based mapping
-├── gradient_mapper.py       # Edge-aware gradient mapping
-├── multimodal.py            # CLIP API integration for AI Auto-Select
-├── online_generator.py      # FLUX.1 / Pollinations image generation
-├── exporter.py              # PNG export with font rendering
-└── diff_render.py           # Differentiable rendering (experimental)
+ascii_gen/                           # Core Python Package
+├── gradient_mapper.py      ✅ ACTIVE  # Brightness mapping, Floyd-Steinberg dithering, edge enhancement
+├── perceptual.py           ✅ ACTIVE  # SSIM-based structural character matching
+├── enhanced_mapper.py      ✅ ACTIVE  # ViT/ResNet neural mapper (256-dim ViT, 128-dim ResNet)
+├── online_generator.py     ✅ ACTIVE  # FLUX.1 Schnell / Pollinations API image generation
+├── llm_rewriter.py         ✅ ACTIVE  # Gemini/Groq/Llama prompt rewriting
+├── multimodal.py           ✅ ACTIVE  # CLIP semantic scoring for AI Auto-Select
+├── grammar_validator.py    ✅ ACTIVE  # Structural constraints (noise removal, grid enforcement)
+├── advanced_preprocessing.py ✅ ACTIVE # Saliency detection, CLAHE face enhancement
+├── production_training.py  ✅ ACTIVE  # ProductionCNNMapper training and inference
+├── exporter.py             ✅ ACTIVE  # PNG export with monospace font rendering
+├── diff_render.py          ✅ ACTIVE  # Differentiable ASCII rendering (CLIP optimization)
+├── charsets.py             ✅ ACTIVE  # Character sets (standard, heavy, structural, line drawing)
+├── prompt_engineering.py   ⚙️ INTERNAL # ACTION_TO_VISUAL, FEATURE_ENHANCEMENT mappings
+├── composition_handler.py  ⚙️ INTERNAL # Multi-object composition ("X on Y", "A next to B")
+├── cnn_mapper.py           ⚙️ INTERNAL # CNN-based tile classification
+├── aiss.py                 ⚙️ INTERNAL # AISS structural mapper (log-polar histograms)
+├── random_forest.py        ⚙️ INTERNAL # Random Forest tile-to-character classifier
+├── preprocessing.py        ⚙️ INTERNAL # Basic preprocessing (Canny, Sobel, histogram eq)
+├── metrics.py              ⚙️ INTERNAL # SSIM computation, edge preservation scoring
+├── enhanced_training.py    ⚙️ INTERNAL # ViT/ResNet training scripts
+├── result.py               ⚙️ INTERNAL # ASCIIResult dataclass
+├── pipeline.py             🧪 RESEARCH # Alternative end-to-end pipeline
+├── generator.py            🧪 RESEARCH # Local Stable Diffusion with ControlNet
+└── model_converter.py      🧪 RESEARCH # Model-based tile converter wrapper
 
 web/
-└── app.py                   # Gradio web interface
+└── app.py                  ✅ ACTIVE  # Gradio web interface (main entry point)
 
 models/
-├── ascii_vit_final.pth      # Trained ViT model (768→256 dim)
-├── ascii_resnet18_final.pth # Trained ResNet18 model (512→128 dim)
-└── production_cnn.pth       # Production CNN weights
-
-tests/
-├── test_quality.py          # Quality comparison across modes
-├── test_standard.py         # End-to-end pipeline test
-├── repro_composition.py     # Multi-object composition tests
-└── repro_poses.py           # Pose enforcement tests
+├── ascii_resnet18_final.pth         # Trained ResNet18 ⭐ RECOMMENDED
+├── ascii_vit_final.pth              # Trained ViT (undertrained)
+├── production_cnn.pth               # Production CNN weights
+└── production_rf.joblib             # Random Forest model
 ```
 
 ### Data Flow Example
