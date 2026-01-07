@@ -168,7 +168,7 @@ graph LR
     end
     
     subgraph "Phase 2: Generation"
-        Flux[FLUX.1 Diffusion<br>High Contrast LoRA]:::ai
+        Flux[FLUX.1 Diffusion<br>Schnell]:::ai
         Image(Base Image):::input
     end
     
@@ -548,7 +548,72 @@ png_path = render_ascii_to_image(ascii_art)
 
 ---
 
-## � Performance
+## 🎛️ Options Reference
+
+A complete guide to all settings in the web interface.
+
+### Image Generation Models
+
+| Model | Description | Speed | Quality |
+|-------|-------------|-------|---------|
+| **FLUX.1 Schnell** | HuggingFace Inference API | Medium | ⭐⭐⭐⭐⭐ |
+| Pollinations FLUX | Free API, no token needed | Medium | ⭐⭐⭐⭐ |
+| Pollinations Turbo | Speed-optimized model | Fast | ⭐⭐⭐ |
+
+### Neural Network Models
+
+| Model | What It Does | Recommendation |
+|-------|--------------|----------------|
+| **ascii_resnet18_final.pth** | ResNet18 trained on 140K ASCII samples. Extracts features to select best character per tile. | ⭐ **BEST** - 8x stronger features |
+| ascii_vit_final.pth | Vision Transformer for feature extraction | Slower, lower activation |
+| ascii_model.pth | Legacy ResNet18 | Fallback only |
+
+### Render Modes
+
+| Mode | What It Does | Best For |
+|------|--------------|----------|
+| **AI Auto-Select** | Uses CLIP to evaluate 5 methods and pick the best semantically | All-purpose (recommended) |
+| **Deep Structure (SSIM)** | Optimizes Structural Similarity Index between ASCII and source | Architecture, diagrams, geometry |
+| **Portrait (Gradient)** | Higher resolution with face-tuned parameters | Faces, portraits |
+| Standard (CNN) | Neural network classifies each 8×14 tile | General with AI character selection |
+| Neat (Gradient) | Clean minimal output with 10-char ramp | Icons, logos, simple shapes |
+| Standard (Gradient) | Brightness-to-density mapping | Balanced general use |
+| High (Gradient) | Detailed character ramp | Scenes with subtle shading |
+| Ultra (Gradient) | Maximum character variety | Maximum detail |
+
+### Advanced Options Explained
+
+| Option | What It Does |
+|--------|--------------|
+| **Output Width** | Characters per line (30-150). Higher = more detail, may need scrolling |
+| **Seed** | Random seed for reproducible image generation |
+| **🌙 Dark Mode Invert** | Reverses character mapping for dark backgrounds (space↔@) |
+| **🧭 Auto-Routing** | LLM classifies content (face/structure/text) and auto-switches to optimal algorithm. Faces get CLAHE enhancement. |
+| **🎨 Semantic Palette** | Detects keywords like "bold/thick" → uses heavy chars (`@#%8&WM`). LLM can generate custom palettes. |
+| **Neural Mapper** | Enables ResNet/ViT to analyze tiles for better character selection vs simple brightness |
+
+### Recommended Settings
+
+**Best Quality:**
+```
+Image Model:    FLUX.1 Schnell (HuggingFace)
+Neural Model:   ascii_resnet18_final.pth  ← Important!
+Render Mode:    AI Auto-Select
+Width:          80-100
+All toggles:    ✅ On
+```
+
+**Fast Testing:**
+```
+Image Model:    Pollinations Turbo
+Render Mode:    Neat (Gradient)
+Width:          60
+Neural Mapper:  Off
+```
+
+---
+
+## 📈 Performance
 
 | Operation | Time (CPU) | Notes |
 |-----------|------------|-------|
@@ -632,47 +697,51 @@ MIT License - see [LICENSE](LICENSE)
 | [CLIP (HuggingFace)](https://huggingface.co/docs/transformers/en/model_doc/clip) | Semantic embeddings |
 | [Diffusers](https://github.com/huggingface/diffusers) | Image generation pipelines |
 
-### Semantic Guidance
-| Pipeline | Purpose |
-|----------|---------|
-| `SemanticStableDiffusionPipeline` | SEGA integration |
-| `AttendAndExcitePipeline` | Subject preservation |
-
-### Grammar-Constrained Generation
-| Tool | Use Case |
-|------|----------|
-| [grammar-guide](https://github.com/parkervg/grammar-guide) | Enforce ASCII output validity |
-| [llguidance](https://github.com/guidance-ai/llguidance) | Fast structured outputs |
-| [Lark Parser](https://github.com/lark-parser/lark) | Grammar definition |
+### Research References
+| Technique | Implementation |
+|-----------|----------------|
+| Attend-and-Excite | Subject extraction in `llm_rewriter.py` |
+| SEGA Concepts | Prompt decomposition in `prompt_engineering.py` |
 
 ---
 
-## 🔬 Experimental: "Pre-ASCII" Training Kit
+## 🔮 Future Scope
 
-We include a complete research kit to train a custom FLUX.1 LoRA for generating **structurally valid** 16px grid layouts (Roguelike maps, ASCII dungeons).
+### 1. Pre-ASCII LoRA Training
 
-**Why?** Standard diffusion models fail to generate monospaced grids. This kit solves the "VAE Stride Misalignment" problem by procedurally generating training data that is mathematically locked to the 16x16 pixel stride of the FLUX.1 VAE.
+> Training a FLUX.1 LoRA for grid-aligned ASCII layouts directly from the diffusion model.
 
-### 1. Generate Dataset
-Manufacture thousands of perfect 1024x1024 training images (no web scraping required):
+**The Problem**: Standard diffusion models struggle with discrete, grid-aligned data due to VAE stride (16px) misalignment.
 
-```bash
-python ascii_gen/training/dataset_generator.py
-```
-*Generates samples in `ascii_training_data/` using Cellular Automata and BSP algorithms.*
+**Proposed Solution**: Lock training data to 16x16 pixel cells = 64x64 character grid aligned with VAE latent space.
 
-### 2. Train LoRA (Requires GPU)
-Use the provided config with [ostris/ai-toolkit](https://github.com/ostris/ai-toolkit) on an A100/H100 machine:
+| Component | Status | Location |
+|-----------|--------|----------|
+| Dataset Generator | ✅ Ready | `notebooks/kaggle_pre_ascii_lora.py` |
+| Training Config | ✅ Ready | AI-Toolkit YAML included |
+| **LoRA Training** | ⏳ Pending | Requires A100 GPU |
+| **LoRA Integration** | ⏳ Pending | After training |
 
-```bash
-# On your GPU server
-python run.py config/train_flux_ascii.yaml
-```
-*Config includes optimized hyperparameters: Rank 64, Alpha 32, Constant LR 4e-4.*
+### 2. Grammar-Constrained Generation
+
+Using grammar-based constraints to enforce valid ASCII output patterns.
+
+| Tool | Status |
+|------|--------|
+| grammar-guide | 📋 Planned |
+| llguidance | 📋 Planned |
+
+### 3. Additional Improvements
+
+- [ ] Train ViT model with more epochs (currently undertrained)
+- [ ] Video-to-ASCII animation support
+- [ ] Real-time webcam ASCII conversion
+- [ ] Custom character set training
+
 
 ---
 
-## �🙏 Acknowledgments
+## 🙏 Acknowledgments
 
 - [Black Forest Labs](https://huggingface.co/black-forest-labs) for FLUX.1 Schnell
 - [HuggingFace](https://huggingface.co) for free inference API
