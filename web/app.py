@@ -559,118 +559,169 @@ def create_interface():
             with gr.TabItem("✨ Prompt to ASCII"):
                 with gr.Row():
                     with gr.Column(scale=1):
-                        prompt_input = gr.Textbox(
-                            label="Your Prompt",
-                            placeholder="Describe what you want to generate...",
-                            lines=3,
-                            max_lines=5,
-                        )
-                        
-                        # API / Generator Settings
+                        # Prompt input with examples in same group
                         with gr.Group():
+                            prompt_input = gr.Textbox(
+                                label="Your Prompt",
+                                placeholder="a cute cat sitting on a chair...",
+                                lines=3,
+                                max_lines=5,
+                            )
+                            gr.Markdown("**💡 Try these examples:**", elem_classes=["example-label"])
                             with gr.Row():
-                                gen_source = gr.Radio(
-                                    choices=["Default (Auto)", "Custom HF Token"],
-                                    value="Default (Auto)",
-                                    label="Image Generator Source",
-                                    interactive=True
-                                )
+                                ex1 = gr.Button("🏠 House", size="sm", variant="secondary")
+                                ex2 = gr.Button("🐱 Cat on chair", size="sm", variant="secondary")
+                                ex3 = gr.Button("⭐ Stars & moon", size="sm", variant="secondary")
+                            with gr.Row():
+                                ex4 = gr.Button("🏔️ Mountain", size="sm", variant="secondary")
+                                ex5 = gr.Button("🌳 Tree", size="sm", variant="secondary")
+                                ex6 = gr.Button("❤️ Heart", size="sm", variant="secondary")
+                        
+                        # Unified Settings Wizard
+                        with gr.Group():
+                            # Step indicator
+                            step_indicator = gr.Markdown("**Step 1 of 3:** Image Source")
+                            
+                            # === Step 1: Image Generator Source ===
+                            with gr.Column(visible=True) as step1_container:
+                                gr.Markdown("### 🖼️ Image Generator Source")
+                                with gr.Row():
+                                    gen_source = gr.Radio(
+                                        choices=["Default (Auto)", "Custom HF Token"],
+                                        value="Default (Auto)",
+                                        label="Choose how to generate images",
+                                        interactive=True
+                                    )
                                 custom_token_input = gr.Textbox(
                                     label="HuggingFace Token (Write Access)",
                                     placeholder="hf_...",
                                     type="password",
                                     visible=False
                                 )
+                                step1_next = gr.Button("Configure AI Model (Expand) ▼", variant="secondary")
                             
+                            # === Step 2: AI Configuration ===
+                            with gr.Column(visible=False) as step2_container:
+                                gr.Markdown("### 🤖 AI Configuration")
+                                with gr.Row():
+                                    image_gen_model = gr.Dropdown(
+                                        choices=[
+                                            "FLUX.1 Schnell (HuggingFace) - Best Quality",
+                                            "Pollinations FLUX - Free Fallback",
+                                            "Pollinations Turbo - Fast",
+                                        ],
+                                        value="FLUX.1 Schnell (HuggingFace) - Best Quality",
+                                        label="🎨 Image Generation Model",
+                                        info="Model used to generate the image from prompt",
+                                        interactive=True
+                                    )
+                                with gr.Row():
+                                    resnet_model_selector = gr.Dropdown(
+                                        choices=[
+                                            "ascii_resnet18_final.pth (ResNet18 - BEST)",
+                                            "ascii_vit_final.pth (ViT - Experimental)",
+                                            "ascii_model.pth (ResNet18 - Legacy)",
+                                        ],
+                                        value="ascii_resnet18_final.pth (ResNet18 - BEST)",
+                                        label="🧠 ASCII Mapping Model",
+                                        info="Neural network for character selection",
+                                        interactive=True,
+                                        scale=2
+                                    )
+                                    use_enhanced_mapper = gr.Checkbox(
+                                        label="Enable Neural Mapper",
+                                        value=True,
+                                        info="Use AI for character selection",
+                                        scale=1
+                                    )
+                                with gr.Row():
+                                    step2_back = gr.Button("▲ Collapse", variant="secondary")
+                                    step2_next = gr.Button("Customize ASCII Output (Expand) ▼", variant="secondary")
+                            
+                            # === Step 3: ASCII Settings ===
+                            with gr.Column(visible=False) as step3_container:
+                                gr.Markdown("### ⚙️ ASCII Settings")
+                                with gr.Row():
+                                    width_slider = gr.Slider(
+                                        minimum=30, maximum=150, value=125, step=5,
+                                        label="Output Width",
+                                        info="Character count per line"
+                                    )
+                                    quality_selector = gr.Dropdown(
+                                        choices=["AI Auto-Select (Best Quality)", "Deep Structure (SSIM)", "Portrait (Gradient)", "Standard (CNN)", "Neat (Gradient)", "Standard (Gradient)", "High (Gradient)", "Ultra (Gradient)"],
+                                        value="AI Auto-Select (Best Quality)",
+                                        label="Render Mode",
+                                        info="Algorithm for converting image to text"
+                                    )
+                                step3_back = gr.Button("▲ Collapse", variant="secondary")
+                            
+                            # === Advanced Options (Always visible) ===
+                            with gr.Accordion("🛠️ Advanced Options", open=False):
+                                with gr.Row():
+                                    seed_input = gr.Number(value=42, label="Seed", precision=0)
+                                    invert_ramp_checkbox = gr.Checkbox(label="🌙 Dark Mode Invert", value=False)
+                                
+                                with gr.Row():
+                                    auto_route_checkbox = gr.Checkbox(label="🧭 Auto-Routing", value=True, info="Smart algorithm switching")
+                                    use_semantic_palette = gr.Checkbox(label="🎨 Semantic Palette", value=True, info="Use bold/themed characters")
+                            
+                            # Step navigation logic
                             def toggle_token_input(choice):
                                 return gr.update(visible=(choice == "Custom HF Token"))
                             
-                            gen_source.change(fn=toggle_token_input, inputs=[gen_source], outputs=[custom_token_input])
-
-                        # Sample prompts (like ChatGPT)
-                        gr.Markdown("**Try these examples:**")
-                        with gr.Row():
-                            ex1 = gr.Button("🏠 House", size="sm", variant="secondary")
-                            ex2 = gr.Button("🐱 Cat on chair", size="sm", variant="secondary")
-                            ex3 = gr.Button("⭐ Stars & moon", size="sm", variant="secondary")
-                        with gr.Row():
-                            ex4 = gr.Button("🏔️ Mountain", size="sm", variant="secondary")
-                            ex5 = gr.Button("🌳 Tree", size="sm", variant="secondary")
-                            ex6 = gr.Button("❤️ Heart", size="sm", variant="secondary")
-                        
-                        with gr.Group():
-                            gr.Markdown("### 🤖 AI Configuration")
-                            with gr.Row():
-                                image_gen_model = gr.Dropdown(
-                                    choices=[
-                                        "FLUX.1 Schnell (HuggingFace) - Best Quality",
-                                        "Pollinations FLUX - Free Fallback",
-                                        "Pollinations Turbo - Fast",
-                                    ],
-                                    value="FLUX.1 Schnell (HuggingFace) - Best Quality",
-                                    label="🎨 Image Generation Model",
-                                    info="Model used to generate the image from prompt",
-                                    interactive=True
+                            def go_to_step2():
+                                return (
+                                    gr.update(visible=False),  # hide step1
+                                    gr.update(visible=True),   # show step2
+                                    gr.update(visible=False),  # hide step3
+                                    "**Step 2 of 3:** AI Configuration"
                                 )
-                            with gr.Row():
-                                resnet_model_selector = gr.Dropdown(
-                                    choices=[
-                                        "ascii_vit_final.pth (ViT Vision Transformer - BEST)",
-                                        "ascii_resnet18_final.pth (ResNet18 - Fast)",
-                                        "ascii_model.pth (ResNet18 - Legacy)",
-                                        "ascii_model_old.pth (Experimental)"
-                                    ],
-                                    value="ascii_vit_final.pth (ViT Vision Transformer - BEST)",
-                                    label="🧠 ASCII Mapping Model",
-                                    info="Neural network for character selection",
-                                    interactive=True,
-                                    scale=2
-                                )
-                                use_enhanced_mapper = gr.Checkbox(
-                                    label="Enable Neural Mapper",
-                                    value=True,
-                                    info="Use AI for character selection",
-                                    scale=1
-                                )
-                        
-                        with gr.Group():
-                            gr.Markdown("### ⚙️ ASCII Settings")
-                            with gr.Row():
-                                width_slider = gr.Slider(
-                                    minimum=30, maximum=150, value=80, step=5,
-                                    label="Output Width",
-                                    info="Character count per line"
-                                )
-                                quality_selector = gr.Dropdown(
-                                    choices=["AI Auto-Select (Best Quality)", "Deep Structure (SSIM)", "Portrait (Gradient)", "Standard (CNN)", "Neat (Gradient)", "Standard (Gradient)", "High (Gradient)", "Ultra (Gradient)"],
-                                    value="AI Auto-Select (Best Quality)",
-                                    label="Render Mode",
-                                    info="Algorithm for converting image to text"
-                                )
-                        
-                        with gr.Accordion("🛠️ Advanced Options", open=False):
-                            with gr.Row():
-                                seed_input = gr.Number(value=42, label="Seed", precision=0)
-                                invert_ramp_checkbox = gr.Checkbox(label="🌙 Dark Mode Invert", value=False)
                             
-                            with gr.Row():
-                                auto_route_checkbox = gr.Checkbox(label="🧭 Auto-Routing", value=True, info="Smart algorithm switching")
-                                use_semantic_palette = gr.Checkbox(label="🎨 Semantic Palette", value=True, info="Use bold/themed characters")
+                            def go_to_step1():
+                                return (
+                                    gr.update(visible=True),   # show step1
+                                    gr.update(visible=False),  # hide step2
+                                    gr.update(visible=False),  # hide step3
+                                    "**Step 1 of 3:** Image Source"
+                                )
+                            
+                            def go_to_step3():
+                                return (
+                                    gr.update(visible=False),  # hide step1
+                                    gr.update(visible=False),  # hide step2
+                                    gr.update(visible=True),   # show step3
+                                    "**Step 3 of 3:** ASCII Settings ✓"
+                                )
+                            
+                            def go_back_to_step2():
+                                return (
+                                    gr.update(visible=False),  # hide step1
+                                    gr.update(visible=True),   # show step2
+                                    gr.update(visible=False),  # hide step3
+                                    "**Step 2 of 3:** AI Configuration"
+                                )
+                            
+                            gen_source.change(fn=toggle_token_input, inputs=[gen_source], outputs=[custom_token_input])
+                            step1_next.click(fn=go_to_step2, outputs=[step1_container, step2_container, step3_container, step_indicator])
+                            step2_back.click(fn=go_to_step1, outputs=[step1_container, step2_container, step3_container, step_indicator])
+                            step2_next.click(fn=go_to_step3, outputs=[step1_container, step2_container, step3_container, step_indicator])
+                            step3_back.click(fn=go_back_to_step2, outputs=[step1_container, step2_container, step3_container, step_indicator])
                         
                         generate_btn = gr.Button("🚀 Generate ASCII Art", variant="primary", size="lg")
                         
+                        # Generated Image moved here (Left Column)
+                        preview_image = gr.Image(label="Generated Image", type="pil")
+                    
+                    with gr.Column(scale=1):
+                         # Process Log moved here (Right Column)
                         with gr.Accordion("🧠 Thinking Process (Live Log)", open=True):
                             process_log = gr.Textbox(
                                 label="Process Log", 
-                                lines=8, 
+                                lines=15, 
                                 interactive=False,
                                 elem_id="process-log"
                             )
-                            
                         status_text = gr.Textbox(label="Status", interactive=False)
-                    
-                    with gr.Column(scale=1):
-                        preview_image = gr.Image(label="Generated Image", type="pil")
                 
                 
                 with gr.Accordion("Micro Preview (Zoomed Out)", open=True):
