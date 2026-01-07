@@ -61,6 +61,7 @@ test_output.txt
 # Secrets
 *.env
 .env.*
+!.env.example
 
 # Generated Training Data
 ascii_training_data/
