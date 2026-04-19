@@ -341,12 +341,17 @@ def create_ultra_detailed_mapper(width: int = 100) -> GradientMapper:
 
 
 def create_standard_mapper(width: int = 80) -> GradientMapper:
-    """Create mapper for standard output (good balance)."""
+    """Create mapper for standard output — boundary-clear + tonal shading.
+
+    Uses RAMP_DETAILED (~40 chars) for richer gradient mapping and a softer
+    contrast so midtones survive into the ASCII. Pair with convert_with_edges()
+    for sharp silhouettes on top of the shading.
+    """
     config = GradientConfig(
-        ramp=RAMP_STANDARD,
+        ramp=RAMP_DETAILED,
         width=width,
-        contrast=1.5,
-        sharpness=1.5,
+        contrast=1.3,
+        sharpness=1.4,
         dither=True,
         edge_enhance=True,
     )
@@ -431,31 +436,31 @@ def image_to_gradient_ascii(
     Returns:
         ASCII art string
     """
-    # Select ramp
+    # Select ramp — DETAILED is the new default; gives the mapper ~40 chars of tonal range
     ramps = {
         "ultra": RAMP_ULTRA,
         "detailed": RAMP_DETAILED,
-        "standard": RAMP_STANDARD,
+        "standard": RAMP_DETAILED,   # was RAMP_STANDARD — promote richer ramp by default
         "minimal": RAMP_MINIMAL,
         "blocks": RAMP_BLOCKS,
         "structural": RAMP_STRUCTURAL,
         "neat": RAMP_NEAT,
-        "portrait": RAMP_ULTRA, # Portrait uses Ultra ramp
+        "portrait": RAMP_ULTRA,
     }
-    selected_ramp = ramps.get(ramp, RAMP_STANDARD)
-    
-    # Defaults base on mode
-    contrast = 1.5
+    selected_ramp = ramps.get(ramp, RAMP_DETAILED)
+
+    # Default contrast tuned to preserve midtones for shading
+    contrast = 1.3
     dither = True
-    
+
     if ramp == "neat":
         contrast = 2.5
         dither = False
         if edge_weight < 0.5: edge_weight = 0.7
     elif ramp == "portrait":
-        contrast = 1.2  # Lower contrast for portraits to keep details
+        contrast = 1.15  # Very gentle contrast for face midtones
         dither = True
-        if edge_weight > 0.3: edge_weight = 0.2 # Lower edge weight for portraits
+        if edge_weight > 0.25: edge_weight = 0.2  # Soft edges so face shading dominates
     
     # Create config
     config = GradientConfig(
