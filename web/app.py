@@ -30,9 +30,9 @@ from PIL import Image
 from ascii_gen.online_generator import OnlineGenerator
 from ascii_gen.production_training import ProductionCNNMapper
 from ascii_gen.gradient_mapper import (
-    GradientMapper, GradientConfig, 
+    GradientMapper, GradientConfig,
     RAMP_ULTRA, RAMP_STANDARD, RAMP_DETAILED,
-    image_to_gradient_ascii
+    image_to_gradient_ascii, image_to_boundary_ascii,
 )
 from ascii_gen.multimodal import CLIPSelector
 from ascii_gen.perceptual import create_ssim_mapper
@@ -334,6 +334,7 @@ def generate_from_prompt(
         
         # Define strategies
         mappers = {
+            "Boundary (Edge-Focused)": lambda img, w: image_to_boundary_ascii(img, width=w),
             "Neat (Gradient)": lambda img, w: image_to_gradient_ascii(img, width=w, ramp="neat", with_edges=True, edge_weight=0.6),
             "Standard (CNN)": lambda img, w: cnn_mapper.convert_image(img.resize((w*8, int(w*8*img.height/img.width*0.55)))),
             "Ultra (Gradient)": lambda img, w: image_to_gradient_ascii(img, width=w, ramp="ultra", with_edges=True, edge_weight=0.3),
@@ -369,6 +370,9 @@ def generate_from_prompt(
         status_msg = f"Generated {len(ascii_art.split(chr(10)))} lines | Mode: {quality_mode}"
     elif quality_mode == "Neat (Gradient)":
         ascii_art = image_to_gradient_ascii(image, width=width, ramp="neat", with_edges=True, edge_weight=0.6, invert_ramp=invert_ramp)
+        status_msg = f"Generated {len(ascii_art.split(chr(10)))} lines | Mode: {quality_mode}"
+    elif quality_mode == "Boundary (Edge-Focused)":
+        ascii_art = image_to_boundary_ascii(image, width=width)
         status_msg = f"Generated {len(ascii_art.split(chr(10)))} lines | Mode: {quality_mode}"
     else:  # CNN (default)
         aspect = image.height / image.width
@@ -413,6 +417,8 @@ def convert_image(image: Image.Image, width: int, quality_mode: str):
         ascii_art = image_to_gradient_ascii(image, width=width, ramp="standard", with_edges=True, edge_weight=0.3)
     elif quality_mode == "Neat (Gradient)":
         ascii_art = image_to_gradient_ascii(image, width=width, ramp="neat", with_edges=True, edge_weight=0.6)
+    elif quality_mode == "Boundary (Edge-Focused)":
+        ascii_art = image_to_boundary_ascii(image, width=width)
     else:  # CNN
         aspect = image.height / image.width
         new_width = width * 8
@@ -828,7 +834,7 @@ def create_interface():
                                         info="Character count per line"
                                     )
                                     quality_selector = gr.Dropdown(
-                                        choices=["AI Auto-Select (Best Quality)", "Deep Structure (SSIM)", "Portrait (Gradient)", "Standard (CNN)", "Neat (Gradient)", "Standard (Gradient)", "High (Gradient)", "Ultra (Gradient)"],
+                                        choices=["AI Auto-Select (Best Quality)", "Boundary (Edge-Focused)", "Deep Structure (SSIM)", "Portrait (Gradient)", "Standard (CNN)", "Neat (Gradient)", "Standard (Gradient)", "High (Gradient)", "Ultra (Gradient)"],
                                         value="AI Auto-Select (Best Quality)",
                                         label="Render Mode",
                                         info="Algorithm for converting image to text"
@@ -951,7 +957,7 @@ def create_interface():
                         with gr.Row():
                             img_width = gr.Slider(30, 120, 80, step=5, label="Width")
                             img_quality = gr.Dropdown(
-                                choices=["Portrait (Gradient)", "Deep Structure (SSIM)", "Standard (CNN)", "Neat (Gradient)", "Standard (Gradient)", "High (Gradient)", "Ultra (Gradient)"],
+                                choices=["Boundary (Edge-Focused)", "Portrait (Gradient)", "Deep Structure (SSIM)", "Standard (CNN)", "Neat (Gradient)", "Standard (Gradient)", "High (Gradient)", "Ultra (Gradient)"],
                                 value="Standard (CNN)",
                                 label="Quality Mode"
                             )

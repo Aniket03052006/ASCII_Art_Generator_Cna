@@ -276,11 +276,11 @@ class GradientMapper:
     def convert_with_edges(self, image: Image.Image, edge_weight: float = 0.5) -> str:
         """
         Convert with edge detection blended in for crisp contours.
-        
+
         Args:
             image: PIL Image to convert
             edge_weight: How much to blend edges (0-1)
-            
+
         Returns:
             ASCII art string with enhanced edges
         """
@@ -289,10 +289,13 @@ class GradientMapper:
             gray = image.convert('L')
         else:
             gray = image.copy()
-        
-        # Detect edges with Canny
+
+        # Detect edges with adaptive Canny thresholds
         img_array = np.array(gray)
-        edges = cv2.Canny(img_array, 50, 150)
+        median_val = float(np.median(img_array))
+        low_thresh = max(15, int(0.33 * median_val))
+        high_thresh = min(240, int(median_val * 1.1))
+        edges = cv2.Canny(img_array, low_thresh, high_thresh)
         
         # Dilate edges slightly for visibility
         kernel = np.ones((2, 2), np.uint8)
@@ -319,6 +322,99 @@ class GradientMapper:
         char_map = self._map_brightness_to_char(block_brightness)
         
         lines = [''.join(row) for row in char_map]
+        return '\n'.join(lines)
+
+
+    @staticmethod
+    def _angle_to_boundary_char(angle: float, density: float) -> str:
+        """Map edge angle and local density to a boundary ASCII character."""
+        if density > 0.65:
+            return '@'
+        if density > 0.45:
+            return '#'
+        if density > 0.28:
+            return '+'
+        angle = angle % 180
+        if angle < 22.5 or angle >= 157.5:
+            return '-'
+        elif 22.5 <= angle < 67.5:
+            return '/'
+        elif 67.5 <= angle < 112.5:
+            return '|'
+        else:
+            return '\\'
+
+    def convert_boundary_focused(self, image: Image.Image) -> str:
+        """
+        Boundary-faithful ASCII conversion using direction-aware edge characters.
+
+        Maps detected edges to directional characters (|, -, /, \\, +, #)
+        and fills background with spaces — faithful to image contours rather
+        than tonal values.  Uses adaptive Canny + bilateral filtering so
+        texture/noise does not produce false boundaries.
+        """
+        if image.mode != 'L':
+            gray = image.convert('L')
+        else:
+            gray = image.copy()
+
+        resized = self._resize_for_ascii(gray)
+        img_array = np.array(resized)
+
+        # Bilateral filter: suppresses texture noise while preserving edges
+        smoothed = cv2.bilateralFilter(img_array, d=5, sigmaColor=40, sigmaSpace=40)
+
+        # Adaptive Canny thresholds derived from image statistics
+        median_val = float(np.median(smoothed))
+        low_thresh = max(15, int(0.33 * median_val))
+        high_thresh = min(240, int(median_val * 1.1))
+        edges = cv2.Canny(smoothed, low_thresh, high_thresh)
+
+        # Dilate 1 px so thin edges survive block averaging
+        kernel = np.ones((2, 2), np.uint8)
+        edges = cv2.dilate(edges, kernel, iterations=1)
+
+        # Gradient directions for character selection
+        sx = cv2.Sobel(smoothed.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3)
+        sy = cv2.Sobel(smoothed.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3)
+        magnitude = np.sqrt(sx ** 2 + sy ** 2)
+        angles = np.degrees(np.arctan2(np.abs(sy), sx)) % 180
+
+        block_w, block_h = self.config.block_size
+        h, w = edges.shape
+        out_h = h // block_h
+        out_w = w // block_w
+
+        lines = []
+        for row in range(out_h):
+            line_chars = []
+            for col in range(out_w):
+                y1, y2 = row * block_h, (row + 1) * block_h
+                x1, x2 = col * block_w, (col + 1) * block_w
+
+                block_edges = edges[y1:y2, x1:x2]
+                edge_density = float(block_edges.mean()) / 255.0
+
+                if edge_density < 0.10:
+                    line_chars.append(' ')
+                    continue
+
+                edge_mask = block_edges > 0
+                block_angles = angles[y1:y2, x1:x2]
+                block_mag = magnitude[y1:y2, x1:x2]
+
+                if edge_mask.any() and block_mag[edge_mask].sum() > 0:
+                    avg_angle = float(np.average(
+                        block_angles[edge_mask],
+                        weights=block_mag[edge_mask] + 1e-6,
+                    ))
+                else:
+                    avg_angle = 90.0
+
+                line_chars.append(self._angle_to_boundary_char(avg_angle, edge_density))
+
+            lines.append(''.join(line_chars))
+
         return '\n'.join(lines)
 
 
@@ -474,6 +570,17 @@ def image_to_gradient_ascii(
         return mapper.convert_with_edges(image, edge_weight)
     else:
         return mapper.convert(image)
+
+
+def image_to_boundary_ascii(image: Image.Image, width: int = 80) -> str:
+    """
+    Convert image to boundary-focused ASCII art.
+
+    Uses direction-aware edge characters for maximum contour fidelity.
+    Background is pure space; edges map to |, -, /, \\, +, #, @ by direction.
+    """
+    config = GradientConfig(width=width, block_size=(2, 4))
+    return GradientMapper(config).convert_boundary_focused(image)
 
 
 # =============================================================================
