@@ -235,36 +235,50 @@ def convert_to_ascii(image, request: GenerateRequest) -> str:
         else:
             mode = "standard"  # fallback
     
-    # Gradient-based modes
+    # Gradient-based modes — defaults tuned for BOTH boundary clarity AND tonal shading.
+    # Richer ramps (DETAILED/ULTRA) give the mapper more characters to express grey gradients.
     ramp_map = {
         "ultra": RAMP_ULTRA,
         "high": RAMP_DETAILED,
-        "standard": RAMP_STANDARD,
+        "standard": RAMP_DETAILED,   # was RAMP_STANDARD — DETAILED gives ~40 chars for shading
         "neat": RAMP_NEAT,
         "portrait": RAMP_ULTRA,
     }
-    
-    ramp = ramp_map.get(mode, RAMP_STANDARD)
-    
-    # Mode-specific config adjustments
-    contrast = 1.5
+
+    ramp = ramp_map.get(mode, RAMP_DETAILED)
+
+    # Mode-specific config — lower contrast preserves midtones so shading survives
+    # to the ASCII output. Edge-blended conversion (convert_with_edges) keeps boundaries sharp.
+    contrast = 1.3
     dither = True
-    sharpness = 1.5
-    
+    sharpness = 1.4
+    edge_weight = 0.35   # blend Canny edges into the brightness map for crisp outlines
+    use_edges = True     # default: boundary-clear + shaded output
+
     if mode == "neat":
+        # Pure line-art look: heavy edges, hard contrast, no dithering
         contrast = 2.5
         dither = False
         sharpness = 2.0
+        edge_weight = 0.7
     elif mode == "portrait":
-        contrast = 1.2
+        # Faces: low contrast preserves skin gradients, light edge weight
+        contrast = 1.15
         sharpness = 1.3
+        edge_weight = 0.2
     elif mode == "ultra":
-        contrast = 1.4
+        contrast = 1.3
         sharpness = 1.3
+        edge_weight = 0.3
     elif mode == "high":
-        contrast = 1.5
-        sharpness = 1.5
-    
+        contrast = 1.35
+        sharpness = 1.4
+        edge_weight = 0.35
+    elif mode == "standard":
+        contrast = 1.3
+        sharpness = 1.4
+        edge_weight = 0.35
+
     config = GradientConfig(
         width=width,
         ramp=ramp,
@@ -272,8 +286,12 @@ def convert_to_ascii(image, request: GenerateRequest) -> str:
         contrast=contrast,
         dither=dither,
         sharpness=sharpness,
+        edge_enhance=True,
     )
     mapper = GradientMapper(config)
+
+    if use_edges:
+        return mapper.convert_with_edges(image, edge_weight=edge_weight)
     return mapper.convert(image)
 
 

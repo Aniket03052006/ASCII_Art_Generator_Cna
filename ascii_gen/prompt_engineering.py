@@ -474,28 +474,28 @@ CONCEPT_REFINEMENT: Dict[str, str] = {
 # =============================================================================
 STYLES = {
     "default": PromptStrategy(
-        style="simple coloring book outline, pure line drawing, ONLY black outlines on white, NO shading NO texture",
-        composition="centered on SOLID WHITE background, empty white space inside shapes, NO fill",
-        rendering="thin clean outlines only, coloring book style, empty interiors, zero shading, zero crosshatching",
-        negative="shading, texture, crosshatching, stippling, hatching, fur, hair, detailed, realistic, photo, 3d, gradient, gray, pattern, sketch lines"
+        style="detailed monochrome graphite drawing with bold outlines AND smooth tonal shading, full white-to-black tonal range",
+        composition="centered on a clean white background, subject clearly silhouetted with strong edges, soft grey shading on curved/3D surfaces to suggest form",
+        rendering="bold sharp outlines around every subject, smooth grey shading inside forms, deep black shadows, bright highlights, crisp focus, monochrome",
+        negative="color, colorful, rainbow, vivid, blurry, soft focus, bokeh, depth of field, low contrast, washed out, photo artifacts, jpeg noise, watermark, text, logo"
     ),
     "diagram": PromptStrategy(
-        style="technical diagram style, schematic blueprint view",
-        composition="distinct elements with clear separation and labels",
-        rendering="high contrast, precise geometric shapes, uniform line weight, engineering style",
-        negative="artistic, painterly, textured, messy, overlap, organic"
+        style="technical ink rendering, blueprint with subtle shading on surfaces",
+        composition="distinct elements with clear separation, parallel-line shading on surfaces to suggest 3D form",
+        rendering="precise crisp outlines AND uniform parallel-line shading on faces of objects, monochrome, sharp focus",
+        negative="color, painterly, messy, blurry, photo artifacts, watermark"
     ),
     "cartoon": PromptStrategy(
-        style="cartoon illustration style, fun and playful",
-        composition="dynamic composition with expressive poses",
-        rendering="bold black outlines, simplified shapes, exaggerated features, comic style",
-        negative="realistic, photograph, muted, serious, complex shading"
+        style="monochrome cartoon illustration with bold outlines and cel-shaded greys",
+        composition="dynamic pose with clear silhouette, two-tone shading (light + mid-grey) on each form",
+        rendering="thick black outlines AND flat grey shading regions for cel-shaded look, sharp focus",
+        negative="color, photo, blurry, low contrast, watermark, text"
     ),
     "icon": PromptStrategy(
-        style="app icon style, modern flat design",
+        style="modern flat icon, vector look",
         composition="perfectly centered, balanced, symmetrical where appropriate",
-        rendering="super thick outlines, maximally simplified, recognizable at any size",
-        negative="detailed, complex, thin lines, text, multiple elements"
+        rendering="thick uniform outlines, simplified shapes, optionally one flat grey shade for depth, recognizable at any size",
+        negative="color, photo, blurry, complex, text, watermark"
     ),
 }
 
@@ -632,10 +632,7 @@ class PromptEnhancer:
         # Check for celestial/scientific content (use diagram)
         if re.search(r"\b(moon|earth|planet|solar|orbit|atom|molecule|cell)\b", prompt_lower):
             return "diagram"
-        
-        if re.search(r"\b(moon|earth|planet|solar|orbit|atom|molecule|cell)\b", prompt_lower):
-            return "diagram"
-        
+
         return "default"
 
     def is_pose_restricted(self, prompt: str) -> bool:
@@ -790,18 +787,16 @@ class PromptEnhancer:
         restricted_pose = self.is_pose_restricted(prompt)
         
         base_enforcers = [
-            "distinct silhouettes",
-            "generous white space between elements",
+            "distinct silhouettes with clear bold outlines",
+            "smooth tonal shading inside each form for ASCII gradient mapping",
+            "full white-to-black tonal range",
             "clean sharp edges",
             "prominent features clearly visible",
-            "simple geometric primitives"
         ]
-        
-        # If NOT restricted, we force spread out limbs/parts
+
+        # If NOT restricted, encourage limb separation so silhouettes stay readable
         if not restricted_pose:
-            base_enforcers.insert(0, "limbs/parts spread out distinctively")
-            base_enforcers.insert(1, "exploded view spacing")
-            base_enforcers.append("no overlapping parts")
+            base_enforcers.insert(0, "limbs/parts spread out so each silhouette is readable")
         
         visual_enforcers = ", ".join(base_enforcers)
         

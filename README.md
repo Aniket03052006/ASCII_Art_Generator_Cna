@@ -4,7 +4,7 @@
   <img src="outputs/iteration3_combined.png" alt="Cat on Chair Demo" width="400">
 </p>
 
-Transform text prompts and images into stunning ASCII art using AI and computer vision.
+Transform text prompts and images into ASCII art with **sharp silhouette boundaries** and **rich tonal shading** using AI and computer vision.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -71,13 +71,15 @@ User Prompt → [LLM Rewriting] → [Image Generation] → [Preprocessing] → [
 
 | Model | Provider | Purpose | Speed |
 |-------|----------|---------|-------|
-| **Gemini 2.0 Flash** | Google | Primary prompt rewriter | Fast |
-| **Llama 3.3 70B** | Groq | Fallback rewriter | Very Fast |
+| **Gemini 1.5 Flash** | Google | Primary prompt rewriter | Fast |
+| **Llama 3.3 70B Versatile** | Groq | Fallback rewriter | Very Fast |
 
-**How it works**: User prompts like "computer" are often too vague. The LLM transforms them into ASCII-friendly descriptions:
+**How it works**: User prompts like "computer" are too vague or produce photorealistic output hostile to ASCII. The LLM transforms them into ASCII-optimised descriptions that produce **clear silhouettes with tonal shading**:
 ```
 INPUT:  "computer"
-OUTPUT: "desktop monitor icon: large rectangle for screen, keyboard below, simple black outlines"
+OUTPUT: "Vintage patent illustration of a desktop computer. Clean precise outlines,
+         subtle parallel-line shading on curved screen edges and tower side to suggest
+         3D form. White background, monochrome, sharp focus, full tonal range."
 ```
 
 ### 2. Image Generation Model
@@ -129,42 +131,46 @@ Used in "AI Auto-Select" mode to choose the best conversion strategy.
 
 ### 1. LLM Prompt Rewriting (`llm_rewriter.py`)
 
-**The Problem**: Users type vague prompts like "computer" → AI generates photorealistic 3D renders with gradients and textures → Terrible ASCII art with random noise.
+**The Problem**: Vague prompts → photorealistic 3D renders → flat or noisy ASCII with no tonal variation and blurry silhouettes.
 
-**Our Solution**: LLM with few-shot examples transforms prompts into ASCII-optimized descriptions.
+**Our Solution**: LLM (Gemini 1.5 Flash → Groq Llama 3.3 70B → rule-based fallback) with few-shot examples rewrites prompts to target **high-contrast monochrome illustrations** with both clear boundaries AND smooth tonal shading. The system prompt explicitly requests shading styles (charcoal, graphite, engraving, ink wash) instead of flat outlines.
 
 **Why It Matters**:
-- **Semantic Bridge**: LLMs understand that "computer" should become "rectangle monitor + keyboard icon"
-- **Action Preservation**: "cat chasing mouse" stays as TWO subjects with motion cues, not just a sitting cat
-- **Style Enforcement**: Output always includes "black outlines, white background, no gradients"
+- **Semantic Bridge**: "cat" becomes a noir chiaroscuro with directional light, white highlights, and deep black shadows — giving the gradient mapper a full tonal range to express
+- **Shading Plan step**: LLM chain-of-thought now includes choosing a light source and planning where shadows fall on curved surfaces
+- **Action Preservation**: Multi-subject prompts use spatial layout (`LEFT:`/`RIGHT:`) with equal detail for each subject
+- **Attend-and-Excite**: After rewriting, subjects from the original are verified to be present; missing ones are prepended (early tokens get more diffusion attention)
 
 ```python
 # Example transformation
 INPUT:  "freedom"
-OUTPUT: "majestic eagle with wings spread WIDE, soaring silhouette, bold black outline"
+OUTPUT: "Detailed monochrome engraving of a majestic eagle with wings spread WIDE.
+         Bold sharp outline silhouette, dense cross-hatching for darker feather areas,
+         sparser hatching for lighter feathers, dramatic backlight halo, full tonal range."
 ```
 
-**Impact**: 3x improvement in subject recognition accuracy.
+**Impact**: 3× improvement in subject recognition + ASCII now renders visible shading depth instead of flat outlines.
 
 ---
 
 ### 2. Prompt Enhancement (`prompt_engineering.py`)
 
-**The Problem**: Even good descriptions can produce images with subtle gradients, gray backgrounds, or soft edges that kill ASCII quality.
+**The Problem**: Rule-based templates need to produce images with both sharp edges AND tonal shading — pure flat outlines give the ASCII mapper nothing to work with except a binary on/off signal.
 
-**Our Solution**: Rule-based templates wrap every prompt with strict style constraints.
+**Our Solution**: Rule-based templates wrap every prompt with style constraints that actively request tonal shading while keeping clean boundaries.
 
 **Why It Matters**:
-- **Guaranteed High Contrast**: Explicit negative prompts block gradients, textures, 3D effects
-- **Clean Backgrounds**: "#FFFFFF solid white" prevents any background texture
-- **Consistent Style**: Every image follows the same black-on-white icon aesthetic
+- **Shading-Friendly Styles**: Default style is now "detailed monochrome graphite drawing with bold outlines AND smooth tonal shading, full white-to-black tonal range"
+- **Accurate Negatives**: Negative prompts exclude *color, blur, and photo artifacts* — but deliberately **do not** exclude `shading`, `gradient`, or `grey` (the old version did, which starved the ASCII mapper)
+- **Visual Enforcers**: Prompts now include "smooth tonal shading inside each form for ASCII gradient mapping" as an explicit enforcer
 
 ```python
-STYLE = "pure black lines on PURE WHITE background (#FFFFFF)"
-NEGATIVE = "shading, texture, gray background, 3d render, realistic"
+STYLE    = "detailed monochrome graphite drawing with bold outlines AND smooth tonal shading"
+NEGATIVE = "color, colorful, rainbow, blurry, soft focus, bokeh, low contrast, photo artifacts"
+# Note: 'shading', 'gradient', 'grey' intentionally ABSENT from negatives
 ```
 
-**Impact**: Background noise reduced by 90%.
+**Impact**: ASCII output transitions from flat icon-like outlines to illustrations with visible form, depth, and shadow.
 
 ---
 
@@ -334,23 +340,26 @@ img[y+1, x+1] += error * 1/16
 
 ---
 
-### 8. Edge Enhancement
+### 8. Edge-Blended Conversion (`gradient_mapper.py`)
 
-**The Problem**: ASCII art loses fine details → faces, fingers, small features disappear.
+**The Problem**: Pure brightness-to-character mapping produces good shading but soft silhouettes — subject boundaries blur into the background. Pure edge detection gives sharp boundaries but no shading.
 
-**Our Solution**: Blend Canny edge detection with original image.
+**Our Solution**: `convert_with_edges()` blends Canny edge detection **into** the brightness map before character assignment. This is now the **default conversion path** for all modes.
 
 **Why It Matters**:
-- **Preserved Details**: Eyes, noses, whiskers remain visible
-- **Crisp Contours**: Object boundaries are sharp
-- **Configurable**: `edge_weight` controls blend amount
+- **Sharp Boundaries + Rich Shading**: Edges darken boundary pixels (forcing dense characters) while the rest of the image keeps its full tonal range for shading
+- **Per-Mode Tuning**: `edge_weight` is calibrated per mode — portrait 0.2 (shading-led), standard 0.35 (balanced), neat 0.7 (line-art dominated)
+- **Dilated Edges**: Canny edges are dilated by 1 iteration so they map to a clearly visible character rather than a 1-pixel gap
 
 ```python
 edges = cv2.Canny(img, 50, 150)
-blended = original * (1 - weight) + edges * weight
+edges = cv2.dilate(edges, kernel, iterations=1)   # widen for ASCII visibility
+edges_inv = 255 - edges                           # dark edges → dense chars
+blended = processed * (1 - edge_weight) + edges_inv * edge_weight
+# Result: boundary pixels are dark (→ @#%) while interior shading is preserved
 ```
 
-**Impact**: Fine detail preservation improved 60%.
+**Impact**: Silhouettes are sharp and unmistakable while interior shading gives depth — the two goals are no longer in tension.
 
 ---
 
@@ -417,15 +426,16 @@ We trained and tested two architectures for character selection:
 
 ## 📊 Quality Modes Comparison
 
-| Mode | Method | Chars | Best For | Speed |
-|------|--------|-------|----------|-------|
-| **Ultra (Gradient)** | Brightness mapping | 70 | Detailed gradients | Fast |
-| **Standard (Gradient)** | Brightness mapping | 16 | Balanced | Fast |
-| **Neat (Gradient)** | High contrast | 12 | Clean structural | Fast |
-| **Portrait (Gradient)** | Low contrast | 70 | Faces, skin tones | Fast |
-| **Standard (CNN)** | Neural network | 95 | Complex textures | Medium |
-| **Deep Structure (SSIM)** | Perceptual matching | 95 | Accuracy | Slow |
-| **AI Auto-Select** | CLIP evaluation | All | Automatic best | Slowest |
+| Mode | Method | Chars | edge_weight | Best For | Speed |
+|------|--------|-------|-------------|----------|-------|
+| **Ultra (Gradient)** | Edge-blended brightness | 70 | 0.30 | Maximum gradient detail | Fast |
+| **High (Gradient)** | Edge-blended brightness | ~40 | 0.35 | Scenes with subtle shading | Fast |
+| **Standard (Gradient)** | Edge-blended brightness | ~40 | 0.35 | Balanced shading + boundaries | Fast |
+| **Neat (Gradient)** | High-contrast, no dither | 12 | 0.70 | Icons, logos, line-art | Fast |
+| **Portrait (Gradient)** | Low contrast + ultra ramp | 70 | 0.20 | Faces, skin-tone gradients | Fast |
+| **Standard (CNN)** | Neural network | 95 | — | Complex textures | Medium |
+| **Deep Structure (SSIM)** | Perceptual matching | 95 | — | Architecture, diagrams | Slow |
+| **AI Auto-Select** | CLIP evaluation | All | — | Automatic best | Slowest |
 
 ---
 
@@ -495,7 +505,7 @@ flowchart LR
     end
 
     subgraph LLMRewriter["llm_rewriter.py"]
-        GROQ["Groq API<br/>(llama-3.1-8b)"]
+        GROQ["Groq API<br/>(llama-3.3-70b)"]
         GEMINI["Gemini API<br/>(gemini-1.5-flash)"]
         FB["Rule-based Fallback"]
     end
@@ -566,9 +576,13 @@ models/
 └─────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. LLMRewriter.rewrite() via Groq                            │
-│    → Transforms to: "Thick line vector art of circus         │
-│      elephant balancing on ball. Bold black outlines..."     │
+│ 2. LLMRewriter.rewrite() via Gemini / Groq Llama-3.3-70B     │
+│    → "Monochrome graphite drawing of a circus elephant       │
+│      balancing on a ball. Bold outline silhouette on         │
+│      the elephant, smooth grey shading on the curved body    │
+│      to suggest volume, darker shadow under the belly,       │
+│      bright highlight on top. White background, full tonal   │
+│      range, sharp focus."                                    │
 └─────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -659,12 +673,12 @@ A complete guide to all settings in the web interface.
 |------|--------------|----------|
 | **AI Auto-Select** | Uses CLIP to evaluate 5 methods and pick the best semantically | All-purpose (recommended) |
 | **Deep Structure (SSIM)** | Optimizes Structural Similarity Index between ASCII and source | Architecture, diagrams, geometry |
-| **Portrait (Gradient)** | Higher resolution with face-tuned parameters | Faces, portraits |
+| **Portrait (Gradient)** | Ultra ramp (70 chars), contrast 1.15, edge_weight 0.2 — shading-led | Faces, portraits, skin tones |
 | Standard (CNN) | Neural network classifies each 8×14 tile | General with AI character selection |
-| Neat (Gradient) | Clean minimal output with 10-char ramp | Icons, logos, simple shapes |
-| Standard (Gradient) | Brightness-to-density mapping | Balanced general use |
-| High (Gradient) | Detailed character ramp | Scenes with subtle shading |
-| Ultra (Gradient) | Maximum character variety | Maximum detail |
+| Neat (Gradient) | High contrast, no dithering, ~12-char ramp, edge_weight 0.7 | Icons, logos, flat line-art |
+| **Standard (Gradient)** | ~40-char ramp, contrast 1.3, edge_weight 0.35 — balanced shading + outlines | General use (recommended gradient mode) |
+| High (Gradient) | ~40-char ramp, contrast 1.35, edge_weight 0.35 | Scenes with more shading detail |
+| Ultra (Gradient) | 70-char ramp, contrast 1.3, edge_weight 0.30 | Maximum tonal detail |
 
 ### Advanced Options Explained
 
