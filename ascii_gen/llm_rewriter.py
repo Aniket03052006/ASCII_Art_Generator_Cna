@@ -55,23 +55,13 @@ Your goal is to optimize prompts for a FLUX.1 diffusion model to generate images
 ## YOUR MISSION
 Transform ANY user prompt into PURE LINE DRAWINGS - just outlines, NO FILL, like a coloring book page.
 
-## ABSOLUTE REQUIREMENTS (NEVER VIOLATE)
-- **OUTLINE ONLY** - JUST the outline/contour of objects, NOTHING INSIDE
-- **COLORING BOOK STYLE** - Empty shapes ready to be colored in (but leave them white)
-- **NO SHADING** - Zero shading, zero crosshatching, zero stippling, zero texture
-- **NO FILL** - Interiors of shapes must be PURE WHITE
-- **BLACK LINES ON WHITE** - Only thin black lines on pure white background
-- **SIMPLE CONTOURS** - Just the outer edge of each shape
-- **WHITE BACKGROUND** - Plain white, no patterns
-
-## CRITICAL CONSTRAINTS FOR ASCII ART
-- **PURE OUTLINES** - Never add any shading, hatching, or texture to fill areas
-- **LINE DRAWING ONLY** - Like a pencil sketch with just edges traced
-- **EMPTY INTERIORS** - All areas inside outlines must be white
-- **NO WOODCUT** - Woodcut/engraving style adds too much texture - AVOID
-- **NO CROSSHATCHING** - This destroys ASCII readability
-- DO add: clean black outlines, simple shapes, white fill
-- DO NOT add: shading, texture, gradients, crosshatching, stippling
+## CORE REQUIREMENTS FOR ASCII COMPATIBILITY
+- **BLACK & WHITE ONLY** - Pure black ink on pure white background, zero grey values, zero colors
+- **LINE-BASED RENDERING** - All detail through lines, hatching, stippling, or outlines — no smooth grey fills or gradients
+- **HIGH CONTRAST** - Strong black/white separation so every edge is sharp and readable
+- **WHITE BACKGROUND** - Background areas stay bright white and empty
+- **NO PHOTO REALISM** - No photography effects, soft gradients, depth-of-field, bokeh, or lens blur
+- **BOLD SHAPES** - Each subject must have a clear, recognizable silhouette
 
 ## REASONING PROCESS (think step-by-step)
 1. IDENTIFY: What are the key subjects in the USER's prompt? List them EXACTLY. **NEVER DROP any element mentioned by the user.**
@@ -104,13 +94,13 @@ When the prompt contains TWO OR MORE subjects (e.g., "man with car", "girl and d
 
 ### Example 0: Action (Chasing)
 INPUT: "cat chasing a rat"
-REASONING: Dynamic action. Stipple style suits fur.
-OUTPUT: "LEFT: A Detailed Stipple Art illustration of a predatory cat, muscles tensed, mid-stride. RIGHT: A frightened rat sprinting away. Heavy ink contrast, dramatic shadows, white background, detailed fur texture using dots, not gray gradients."
+REASONING: Dynamic action. Stipple style suits fur texture while staying black-on-white.
+OUTPUT: "LEFT: Stipple ink illustration of a predatory cat, muscles tensed, mid-stride, black dot texture on white. RIGHT: A frightened rat sprinting away, simple outline with dot shading. Pure white background, high contrast black ink only, no grey fills."
 
 ### Example 1: Abstract Concept
 INPUT: "freedom"
-REASONING: Freedom -> Eagle. Style -> Vintage Engraving (dignified).
-OUTPUT: "Vintage Engraving style illustration of a majestic eagle with wings spread WIDE. Intricate cross-hatching texture on feathers, bold outline, pure white background, high contrast black ink on white paper, dignified and detailed."
+REASONING: Freedom -> Eagle. Engraving style gives rich detail via black hatching lines only.
+OUTPUT: "Vintage engraving style illustration of a majestic eagle with wings spread WIDE. Dense black hatching lines on white paper for feather texture, bold silhouette outline, pure white background, no grey — only black ink lines."
 
 ### Example 2: Complex Scene → Simplified
 INPUT: "a beautiful sunset over the ocean with sailboats and flying seagulls"
@@ -216,6 +206,21 @@ Transform prompts into BOLD, HIGH-CONTRAST ICOCONS. Think "Road Sign" or "Clip A
 INPUT: "cute cat"
 REWRITE: "Thick line vector art of a cat face. Bold black outlines on pure white background. Minimalist icon style. Sharpie marker drawing. Stencil."
 NEGATIVE_PROMPT: "sketch, pencil, messy, gray, shading, photo, realistic, fur texture"
+
+### Example: Multi-subject (man and car)
+INPUT: "man with car"
+REWRITE: "Bold stencil art. LEFT: thick-outlined man silhouette, simple solid shape. RIGHT: thick-outlined car side-view silhouette, chunky bold wheels. Both icons equally sized, stark black on white, 2D flat, no detail."
+NEGATIVE_PROMPT: "realistic, 3d, sketch, texture, gray, gradient, thin lines"
+
+## OUTPUT FORMAT
+Return a STRICT JSON object. Do not include markdown code block syntax (like ```json).
+The JSON object must have these keys:
+- `complexity_score`: Float (0.0-1.0)
+- `classification`: String ("organic", "structure", "face", "text")
+- `semantic_palette`: List of ~10 characters for ASCII mapping
+- `rewritten_prompt`: The optimized stable diffusion prompt (String)
+- `negative_prompt`: String
+- `style_strategy`: String (explanation of why this style was chosen)
 """
 
 
@@ -545,15 +550,19 @@ class LLMPromptRewriter:
         return llm_result
     
     def _rewrite_gemini(self, prompt: str, logs: list, system_prompt: str) -> RewriteResult:
-        """Rewrite using Gemini with enhanced prompt and JSON output."""
-        full_prompt = f"{system_prompt}\n\n---\n\nUSER INPUT: \"{prompt}\""
-        
-        response = self.gemini_client.generate_content(
-            contents=[{"role": "user", "parts": [{"text": full_prompt}]}],
+        """Rewrite using Gemini with system_instruction and JSON output."""
+        # Create per-call model with system_instruction so the role separation is correct
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=system_prompt
+        )
+        response = model.generate_content(
+            f'USER INPUT: "{prompt}"',
             generation_config=types.GenerationConfig(
-                max_output_tokens=500, # Increased for JSON output
+                max_output_tokens=700,
                 temperature=0.4,
-                response_mime_type="application/json" # Request JSON output
+                top_p=0.9,
+                response_mime_type="application/json"
             )
         )
         
@@ -607,14 +616,21 @@ class LLMPromptRewriter:
     def _rewrite_groq(self, prompt: str, logs: list, system_prompt: str) -> RewriteResult:
         """Rewrite using Groq with enhanced prompt and JSON output."""
         response = self.groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f'Rewrite this prompt for ASCII art and return the result as a json object: "{prompt}"'}
+                {"role": "user", "content": (
+                    f'USER INPUT: "{prompt}"\n\n'
+                    'Return ONLY a valid JSON object with exactly these keys: '
+                    'complexity_score (float 0-1), classification (organic/structure/face/text), '
+                    'semantic_palette (list of ~10 ASCII chars), rewritten_prompt (string), '
+                    'negative_prompt (string), style_strategy (string).'
+                )}
             ],
-            max_tokens=500, # Increased for JSON output
+            max_tokens=700,
             temperature=0.4,
-            response_format={"type": "json_object"} # Request JSON output
+            top_p=0.9,
+            response_format={"type": "json_object"}
         )
         
         response_text = response.choices[0].message.content.strip()

@@ -632,10 +632,7 @@ class PromptEnhancer:
         # Check for celestial/scientific content (use diagram)
         if re.search(r"\b(moon|earth|planet|solar|orbit|atom|molecule|cell)\b", prompt_lower):
             return "diagram"
-        
-        if re.search(r"\b(moon|earth|planet|solar|orbit|atom|molecule|cell)\b", prompt_lower):
-            return "diagram"
-        
+
         return "default"
 
     def is_pose_restricted(self, prompt: str) -> bool:
