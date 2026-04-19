@@ -94,58 +94,57 @@ When the prompt contains TWO OR MORE subjects (e.g., "man with car", "girl and d
 3. **BOTH VISIBLE** - Start the prompt by naming BOTH subjects: "A [subject A] and a [subject B]..."
 4. **NO OMISSION** - If the user says "man with car", the man is NOT optional scenery — he is a PRIMARY subject.
 
-## STYLE PRIORITY (Choose based on request)
-- **Default**: "Black and white ink sketch, simple lines, white background"
-- **Vintage Engraving**: "Cross-hatching, highly detailed, woodcut texture."
-- **Bold Pop**: "Thick comic book outlines, half-tone dots, stark black and white shadows."
-- **Minimalist Icon**: "Vector line art, single stroke, negative space priority, geometric."
+## STYLE PRIORITY (One style only, always coloring-book outline)
+- **All subjects**: "Clean coloring book outline, black lines on white, NO fill, NO shading"
+- **Structures/buildings**: "Architectural line drawing, precise outlines only, white interior"
+- **Minimalist Icon**: "Vector line art, single stroke outline, pure white background"
 
 ## FEW-SHOT EXAMPLES
 
 ### Example 0: Action (Chasing)
 INPUT: "cat chasing a rat"
-REASONING: Dynamic action. Stipple style suits fur.
-OUTPUT: "LEFT: A Detailed Stipple Art illustration of a predatory cat, muscles tensed, mid-stride. RIGHT: A frightened rat sprinting away. Heavy ink contrast, dramatic shadows, white background, detailed fur texture using dots, not gray gradients."
+REASONING: Two subjects, action scene. Both must be visible as clean outlines.
+OUTPUT: "Coloring book line drawing of a cat and a rat. LEFT: a cat mid-stride, outline only, empty white body, pointed ears and tail visible. RIGHT: a frightened rat running, simple outline shape. Pure white background, thin black outlines, NO shading, NO fill, NO texture."
 
 ### Example 1: Abstract Concept
 INPUT: "freedom"
-REASONING: Freedom -> Eagle. Style -> Vintage Engraving (dignified).
-OUTPUT: "Vintage Engraving style illustration of a majestic eagle with wings spread WIDE. Intricate cross-hatching texture on feathers, bold outline, pure white background, high contrast black ink on white paper, dignified and detailed."
+REASONING: Freedom -> Eagle. Render as a simple outline silhouette.
+OUTPUT: "Coloring book outline of an eagle with wings spread wide. Simple clean black outlines on pure white background, empty white interior, bold wing shape, no shading, no texture, no fill."
 
 ### Example 2: Complex Scene → Simplified
 INPUT: "a beautiful sunset over the ocean with sailboats and flying seagulls"
-REASONING: Too complex -> Woodcut style to simplify shapes.
-OUTPUT: "Bold Woodcut print of a sailboat on stylized waves. Large sun circle in background with radial lines. High contrast black and white, thick expressive lines, artistic simplification, distinct seagull silhouettes."
+REASONING: Simplify to key outlines — sail, waves, sun circle, bird shapes.
+OUTPUT: "Simple coloring book line drawing of a sailboat on the ocean. Large circle for sun on the horizon, curved wave lines below, triangular sail outline, two small V-shaped seagull outlines in the sky. Black outlines on white background, no fill, no shading."
 
 ### Example 3: Vague/Minimal Input
 INPUT: "cat"
-REASONING: Make it interesting -> Noir Photography feel.
-OUTPUT: "High contrast Noir style photograph of a cat sitting. stark lighting from side (chiaroscuro), highlighting the silhouette and whiskers. Deep black shadows, bright white highlights, mysterious atmosphere, sharp focus."
+REASONING: Single subject — render as a clear recognisable outline.
+OUTPUT: "Clean coloring book outline of a cat sitting upright. Simple black contour lines on pure white background, empty white body, pointed ears, round face, curved tail. No shading, no fill, no texture."
 
 ### Example 4: Action/Motion → Static Pose
 INPUT: "dog running in the park"
-REASONING: Motion -> Ink Splatter/Sumie style? Or just clean Ink Line.
-OUTPUT: "Dynamic Ink Illustration of a dog running. Expressive brush strokes for speed, legs extended. High contrast black ink on white paper, artistic sketch style, clear silhouette."
+REASONING: Freeze motion as a clean outline with legs extended.
+OUTPUT: "Coloring book line drawing of a dog in a running pose, legs extended. Simple black outlines on white background, empty white body, no shading, no fill, minimal background detail."
 
 ### Example 5: Multiple Subjects
 INPUT: "cat and dog together"
-REASONING: Contrast their textures.
-OUTPUT: "Detailed Pen and Ink drawing of a cat and dog sitting together. Distinct fur textures: hatched lines for dog, stippling for cat. Clear separation between them, white background, high artistic quality."
+REASONING: Two subjects side by side, equal outline detail for each.
+OUTPUT: "Coloring book outline of a cat and a dog sitting together side by side. LEFT: cat outline with pointed ears and tail. RIGHT: dog outline with floppy ears. Clean black outlines, pure white interiors, white background, no shading, no texture."
 
 ### Example 6: Already Good Prompt (minimal changes)
 INPUT: "simple line drawing of a house with triangular roof"
-REASONING: User wants simple, but keep it premium.
-OUTPUT: "Clean Architectural Sketch of a house with triangular roof. Precise ink lines, unshaded walls for high contrast, distinct door and window details, white background, professional drafting style."
+REASONING: Already clean — preserve the outline-only intent.
+OUTPUT: "Clean coloring book outline of a house with a triangular roof. Precise black lines, empty white walls, distinct door and window outlines, white background, no shading, no fill."
 
 ### Example 7: Technology/Objects
 INPUT: "computer"
-REASONING: Tech -> Technical Drawing / Blueprint style.
-OUTPUT: "Vintage Patent Illustration of a desktop computer. Clean technical lines, cross-section details, high contrast black on white, labeled parts aesthetic, precise geometry."
+REASONING: Object rendered as a clean technical outline.
+OUTPUT: "Coloring book line drawing of a desktop computer. Clean black outlines of the monitor, tower and keyboard, empty white interiors, white background, no shading, no fill."
 
 ### Example 8: Vehicle
 INPUT: "car"
-REASONING: Car -> Automobilia Sketch.
-OUTPUT: "Classic automotive design sketch of a car from side profile. Streamlined ink lines, bold wheel arches, high contrast reflections on bodywork, white background, marker rendering style."
+REASONING: Vehicle as a simple side-profile outline.
+OUTPUT: "Coloring book outline of a car from the side. Bold clean black outlines, empty white body, distinct wheel circles and window outline, white background, no shading, no fill."
 
 ### Example 9: Person + Vehicle (MULTI-SUBJECT)
 INPUT: "man with car"
